@@ -30,8 +30,23 @@ if ($isAdmin && isset($_POST['save_maintenance'])) {
     exit;
 }
 
+if ($isAdmin && isset($_POST['test_whatsapp'])) {
+    $phones = recepsionis_collect_wa_fallback_phones($koneksi)['phones'] ?? [];
+    $testMessage = 'Tes WhatsApp E-Recepsionis (' . date('Y-m-d H:i:s') . '). Jika Anda menerima pesan ini, integrasi WA aktif.';
+    $testResult = recepsionis_send_whatsapp_messages($koneksi, $testMessage, $phones);
+    $testStatus = !empty($testResult['sent']) ? 'success' : 'failed';
+    $testDetail = rawurlencode(json_encode($testResult, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    header('Location: settings.php?wa_test=' . $testStatus . '&wa_test_detail=' . $testDetail);
+    exit;
+}
+
 // Handle settings update — admin saja
 if ($isAdmin && isset($_POST['update_settings'])) {
+    foreach (['wa_enabled', 'email_notification', 'sms_notification'] as $checkboxKey) {
+        if (!isset($_POST[$checkboxKey])) {
+            $_POST[$checkboxKey] = '0';
+        }
+    }
     foreach ($_POST as $key => $value) {
         if ($key != 'update_settings') {
             $key_esc = esc($key);
@@ -87,6 +102,30 @@ $pageTitle = $isAdmin ? 'Settings' : 'Preferensi Notifikasi';
                 <?php if ($isAdmin && isset($_GET['success'])): ?>
                     <div class="alert alert-success alert-dismissible fade show">
                         <i class="bi bi-check-circle"></i> Settings berhasil diupdate
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                <?php endif; ?>
+
+                <?php if ($isAdmin && isset($_GET['wa_test'])): ?>
+                    <?php
+                    $waTestOk = ($_GET['wa_test'] ?? '') === 'success';
+                    $waTestDetail = json_decode((string) ($_GET['wa_test_detail'] ?? ''), true);
+                    ?>
+                    <div class="alert alert-<?= $waTestOk ? 'success' : 'danger' ?> alert-dismissible fade show">
+                        <i class="bi bi-<?= $waTestOk ? 'check-circle' : 'exclamation-triangle' ?>"></i>
+                        <?php if ($waTestOk): ?>
+                            Tes WhatsApp berhasil dikirim ke nomor fallback.
+                        <?php else: ?>
+                            Tes WhatsApp gagal.
+                            <?php if (is_array($waTestDetail)): ?>
+                                <div class="small mt-2 mb-0">
+                                    Alasan: <?= htmlspecialchars((string) ($waTestDetail['reason'] ?? 'unknown')) ?>
+                                    <?php if (!empty($waTestDetail['responses'][0]['response'])): ?>
+                                        <br>Respons API: <?= htmlspecialchars((string) $waTestDetail['responses'][0]['response']) ?>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endif; ?>
+                        <?php endif; ?>
                         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     </div>
                 <?php endif; ?>
@@ -206,6 +245,16 @@ $pageTitle = $isAdmin ? 'Settings' : 'Preferensi Notifikasi';
                             </div>
                         
                             <hr>
+                            <h5>URL Publik (link WhatsApp)</h5>
+                            <div class="mb-3">
+                                <label class="form-label">Public Base URL</label>
+                                <input type="url" name="public_base_url" class="form-control"
+                                       value="<?= htmlspecialchars($settings['public_base_url'] ?? '') ?>"
+                                       placeholder="http://103.107.4.29:89/Recepsionis/">
+                                <small class="text-muted">URL yang dipakai di link tindak lanjut WA. Wajib diisi di VPS. Untuk dev lokal pakai <code>http://localhost:8888/Recepsionis/</code> atau IP LAN Anda.</small>
+                            </div>
+
+                            <hr>
                             <h5>WhatsApp Integration</h5>
                             <div class="mb-3">
                                 <div class="form-check form-switch">
@@ -236,9 +285,12 @@ $pageTitle = $isAdmin ? 'Settings' : 'Preferensi Notifikasi';
                         </div>
                     </div>
 
-                    <div class="mt-3">
+                    <div class="mt-3 d-flex flex-wrap gap-2">
                         <button type="submit" name="update_settings" class="btn btn-primary">
                             <i class="bi bi-save"></i> Simpan Settings
+                        </button>
+                        <button type="submit" name="test_whatsapp" value="1" class="btn btn-outline-success">
+                            <i class="bi bi-whatsapp"></i> Tes Kirim WhatsApp
                         </button>
                     </div>
                 </form>

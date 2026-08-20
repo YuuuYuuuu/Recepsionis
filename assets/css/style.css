@@ -66,8 +66,16 @@ body {
         overflow-y: auto;
     }
 
-    .navbar + .container-fluid > .row {
+    body:has(.sidebar) > .container-fluid > .row {
         min-height: calc(100vh - 56px);
+        flex-wrap: nowrap;
+    }
+
+    body:has(.sidebar) .col-md-10.content-area {
+        flex: 1 1 auto;
+        width: auto;
+        max-width: none;
+        min-width: 0;
     }
 }
 

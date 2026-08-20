@@ -93,7 +93,15 @@ $notifTitle = 'Helpdesk IT: ' . $nama;
 $notifMessage = "Tiket #{$ticketId}\nNama: {$nama}\nNo: {$nomor}\nKelas: {$kelas}\nKendala: {$kendala}";
 $waMessage = "Tiket Helpdesk IT #{$ticketId}\nNama: {$nama}\nNo: {$nomor}\nKelas: {$kelas}\nKendala: {$kendala}";
 
-recepsionis_notify_helpdesk_it_targets($koneksi, $effectiveTargets, $notifTitle, $notifMessage, $waMessage);
+recepsionis_notify_helpdesk_it_targets(
+    $koneksi,
+    $effectiveTargets,
+    $notifTitle,
+    $notifMessage,
+    $waMessage,
+    'ticket',
+    $ticketId
+);
 
 echo json_encode([
     'success' => true,

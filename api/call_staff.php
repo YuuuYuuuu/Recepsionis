@@ -322,7 +322,7 @@ $wa_invalid_numbers = [];
 $wa_target_source = '';
 
 try {
-    $wa_message = "Panggilan dari: $visitor_name\nNo: $visitor_phone";
+    $wa_message = "Panggilan Helpdesk #{$call_id}\nDari: $visitor_name\nNo: $visitor_phone";
     if (!empty($category_name)) {
         $wa_message .= "\nKategori: $category_name";
     }
@@ -331,14 +331,28 @@ try {
         $wa_message .= "\nRuangan: " . $room_name;
     }
 
-    $waTargets = recepsionis_resolve_wa_targets_for_admins($koneksi, $effective_targets);
-    $wa_target_source = (string) ($waTargets['source'] ?? '');
-    $wa_invalid_numbers = $waTargets['invalid'] ?? [];
-    $waResult = recepsionis_send_whatsapp_messages($koneksi, $wa_message, $waTargets['phones'] ?? []);
-    $wa_responses = $waResult['responses'] ?? [];
-    $wa_sent_any = !empty($waResult['sent']);
-    if (!empty($waResult['invalid'])) {
-        $wa_invalid_numbers = array_merge($wa_invalid_numbers, $waResult['invalid']);
+    $helpdeskCategoryId = recepsionis_get_helpdesk_category_id($koneksi);
+    if ($helpdeskCategoryId > 0 && $category_id === $helpdeskCategoryId) {
+        $waHelpdeskResult = recepsionis_send_helpdesk_wa_with_action_links(
+            $koneksi,
+            $wa_message,
+            'call',
+            (int) $call_id,
+            $effective_targets
+        );
+        $wa_responses = $waHelpdeskResult['responses'] ?? [];
+        $wa_sent_any = !empty($waHelpdeskResult['sent']);
+        $wa_target_source = (string) ($waHelpdeskResult['mode'] ?? 'helpdesk_action_links');
+    } else {
+        $waTargets = recepsionis_resolve_wa_targets_for_admins($koneksi, $effective_targets);
+        $wa_target_source = (string) ($waTargets['source'] ?? '');
+        $wa_invalid_numbers = $waTargets['invalid'] ?? [];
+        $waResult = recepsionis_send_whatsapp_messages($koneksi, $wa_message, $waTargets['phones'] ?? []);
+        $wa_responses = $waResult['responses'] ?? [];
+        $wa_sent_any = !empty($waResult['sent']);
+        if (!empty($waResult['invalid'])) {
+            $wa_invalid_numbers = array_merge($wa_invalid_numbers, $waResult['invalid']);
+        }
     }
 
     if (!empty($wa_responses)) {

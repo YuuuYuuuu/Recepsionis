@@ -110,16 +110,25 @@ body:has(.sidebar) .btn-logout:hover {
     color: var(--danger);
 }
 
-/* ── Sidebar ── */
+/* ── Sidebar + content shell ──
+   Sidebar fixed 248px + Bootstrap col-md-10 (~83%) overflow → konten wrap
+   ke kiri dan menumpuk di atas sidebar. Paksa nowrap + content isi sisa lebar.
+   Catatan: jangan pakai `.navbar + .container-fluid` — ada backdrop di antaranya. */
+body:has(.sidebar) > .container-fluid > .row {
+    min-height: calc(100vh - var(--adm-nav-h));
+    align-items: stretch;
+}
+
 body:has(.sidebar) .sidebar {
     background: var(--adm-surface);
     border-right: 1px solid var(--adm-border);
     box-shadow: none;
     top: var(--adm-nav-h);
     height: calc(100vh - var(--adm-nav-h));
-    width: var(--adm-sidebar-w);
-    flex: 0 0 var(--adm-sidebar-w);
-    max-width: var(--adm-sidebar-w);
+    width: var(--adm-sidebar-w) !important;
+    flex: 0 0 var(--adm-sidebar-w) !important;
+    max-width: var(--adm-sidebar-w) !important;
+    min-width: var(--adm-sidebar-w);
     padding-bottom: 1.5rem;
 }
 
@@ -190,11 +199,24 @@ body:has(.sidebar) .content-area {
     padding: 1.5rem 1.75rem 2rem;
     height: calc(100vh - var(--adm-nav-h));
     overflow-y: auto;
+    overflow-x: hidden;
     background: transparent;
+    flex: 1 1 auto !important;
+    width: auto !important;
+    max-width: none !important;
+    min-width: 0;
 }
 
-body:has(.sidebar) .navbar + .container-fluid > .row {
-    min-height: calc(100vh - var(--adm-nav-h));
+@media (min-width: 992px) {
+    body:has(.sidebar) > .container-fluid > .row {
+        flex-wrap: nowrap !important;
+    }
+
+    body:has(.sidebar) .col-md-10.content-area {
+        flex: 1 1 auto !important;
+        width: auto !important;
+        max-width: none !important;
+    }
 }
 
 body:has(.sidebar) .content-area > h2,

@@ -41,10 +41,13 @@ if (!$notificationsEnabled) {
 }
 
 $hasAssignedUserColumn = recepsionis_column_exists($koneksi, 'staff_calls', 'assigned_user_id');
+$hasFollowUpColumn = recepsionis_column_exists($koneksi, 'staff_calls', 'follow_up_action');
+$followUpSelect = $hasFollowUpColumn ? ', sc.follow_up_action' : ", 'none' AS follow_up_action";
 
 $sql = "SELECT sc.id, sc.visitor_name, sc.visitor_phone, sc.message, sc.created_at,
                sc.live_session_id, sc.category_id, sc.call_type,
-               " . ($hasAssignedUserColumn ? 'sc.assigned_user_id' : 'NULL AS assigned_user_id') . ",
+               " . ($hasAssignedUserColumn ? 'sc.assigned_user_id' : 'NULL AS assigned_user_id') . "
+               {$followUpSelect},
                cc.nama_kategori AS category_name
         FROM staff_calls sc
         LEFT JOIN complaint_categories cc ON cc.id = sc.category_id
@@ -79,6 +82,7 @@ if ($result) {
             'category_name' => $row['category_name'] ?: 'Tanpa kategori',
             'call_type' => $row['call_type'] ?: 'general',
             'assigned_user_id' => $assignedUserId,
+            'follow_up_action' => (string) ($row['follow_up_action'] ?? 'none'),
         ];
     }
 }

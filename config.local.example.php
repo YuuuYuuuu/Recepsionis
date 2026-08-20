@@ -8,3 +8,4 @@
  */
 // define('LIVE_SOCKET_URL', 'http://103.107.4.29:89');
 // define('LIVE_SOCKET_AUTO_HOST', false);
+// define('PUBLIC_BASE_URL', 'http://103.107.4.29:89/Recepsionis/');

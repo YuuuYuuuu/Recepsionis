@@ -316,10 +316,11 @@ SQL;
         out('[OK] Tabel live_chat_admin_state');
     }
 
-    // --- floor_plans (denah per gedung + lantai) ---
+    // --- floor_plans (denah 1:1 dengan ruangan) ---
     $sqlFp = <<<'SQL'
 CREATE TABLE IF NOT EXISTS `floor_plans` (
     `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `room_id` INT NULL DEFAULT NULL,
     `gedung` VARCHAR(100) NOT NULL,
     `lantai` VARCHAR(50) NOT NULL,
     `gambar` VARCHAR(255) NOT NULL,
@@ -327,7 +328,8 @@ CREATE TABLE IF NOT EXISTS `floor_plans` (
     `resepsionis_y` DECIMAL(5,2) NULL DEFAULT NULL,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY `uq_floor_plans_gedung_lantai` (`gedung`, `lantai`)
+    UNIQUE KEY `uq_floor_plans_room_id` (`room_id`),
+    INDEX `idx_floor_plans_gedung_lantai` (`gedung`, `lantai`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
 SQL;
     if (!$koneksi->query($sqlFp)) {
@@ -338,6 +340,20 @@ SQL;
     if (tableExists($koneksi, $schema, 'floor_plans')) {
         runAlter($koneksi, 'ALTER TABLE `floor_plans` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci');
         out('[OK] floor_plans collation diselaraskan ke utf8mb4_unicode_ci');
+
+        if (!columnExists($koneksi, $schema, 'floor_plans', 'room_id')) {
+            runAlter($koneksi, 'ALTER TABLE `floor_plans` ADD COLUMN `room_id` INT NULL DEFAULT NULL AFTER `id`');
+            out('[OK] floor_plans.room_id ditambahkan');
+        } else {
+            out('[OK] floor_plans.room_id sudah ada');
+        }
+
+        // Unique per ruangan (1 denah = 1 ruangan)
+        runAlter($koneksi, 'ALTER TABLE `floor_plans` ADD UNIQUE KEY `uq_floor_plans_room_id` (`room_id`)');
+        // Unique gedung+lantai lama diganti indeks biasa agar banyak denah per lantai boleh
+        runAlter($koneksi, 'ALTER TABLE `floor_plans` DROP INDEX `uq_floor_plans_gedung_lantai`');
+        runAlter($koneksi, 'ALTER TABLE `floor_plans` ADD INDEX `idx_floor_plans_gedung_lantai` (`gedung`, `lantai`)');
+        out('[OK] floor_plans indeks room_id / gedung+lantai diselaraskan');
     }
 
     if (tableExists($koneksi, $schema, 'rooms')) {
@@ -353,8 +369,45 @@ SQL;
                 out("[OK] rooms.{$col} sudah ada");
             }
         }
+
+        $roomTvCols = [
+            'tv_info_image' => 'ADD COLUMN `tv_info_image` VARCHAR(255) NULL DEFAULT NULL',
+            'tv_display_token' => 'ADD COLUMN `tv_display_token` VARCHAR(64) NULL DEFAULT NULL',
+            'tv_info_updated_at' => 'ADD COLUMN `tv_info_updated_at` TIMESTAMP NULL DEFAULT NULL',
+        ];
+        foreach ($roomTvCols as $col => $fragment) {
+            if (!columnExists($koneksi, $schema, 'rooms', $col)) {
+                runAlter($koneksi, 'ALTER TABLE `rooms` ' . $fragment);
+                out("[OK] rooms.{$col} ditambahkan");
+            } else {
+                out("[OK] rooms.{$col} sudah ada");
+            }
+        }
+
+        if (columnExists($koneksi, $schema, 'rooms', 'tv_display_token')) {
+            runAlter($koneksi, 'ALTER TABLE `rooms` ADD UNIQUE KEY `uq_rooms_tv_display_token` (`tv_display_token`)');
+            $missing = $koneksi->query(
+                "SELECT id FROM rooms WHERE tv_display_token IS NULL OR tv_display_token = ''"
+            );
+            $seeded = 0;
+            if ($missing) {
+                while ($row = $missing->fetch_assoc()) {
+                    $token = bin2hex(random_bytes(16));
+                    $id = (int) $row['id'];
+                    $stmt = $koneksi->prepare('UPDATE rooms SET tv_display_token = ? WHERE id = ?');
+                    if ($stmt) {
+                        $stmt->bind_param('si', $token, $id);
+                        if ($stmt->execute()) {
+                            $seeded++;
+                        }
+                        $stmt->close();
+                    }
+                }
+            }
+            out("[OK] rooms.tv_display_token di-seed untuk {$seeded} ruangan");
+        }
     } else {
-        out('[SKIP] Tabel rooms tidak ada, lewati kolom denah_pin');
+        out('[SKIP] Tabel rooms tidak ada, lewati kolom denah_pin / TV info');
     }
 
     // --- users.no_wa (WhatsApp per operator) ---
@@ -395,6 +448,68 @@ SQL;
         } else {
             out('[OK] helpdesk_it_tickets.category_id sudah ada');
         }
+
+        $ticketFollowUpCols = [
+            'follow_up_action' => "ADD COLUMN `follow_up_action` ENUM('none','wait','confirm') NOT NULL DEFAULT 'none' AFTER `status`",
+            'follow_up_at' => 'ADD COLUMN `follow_up_at` TIMESTAMP NULL DEFAULT NULL AFTER `follow_up_action`',
+            'follow_up_by' => 'ADD COLUMN `follow_up_by` INT NULL DEFAULT NULL AFTER `follow_up_at`',
+        ];
+        foreach ($ticketFollowUpCols as $col => $fragment) {
+            if (!columnExists($koneksi, $schema, 'helpdesk_it_tickets', $col)) {
+                runAlter($koneksi, 'ALTER TABLE `helpdesk_it_tickets` ' . $fragment);
+                out("[OK] helpdesk_it_tickets.{$col} ditambahkan");
+            } else {
+                out("[OK] helpdesk_it_tickets.{$col} sudah ada");
+            }
+        }
+    }
+
+    if (tableExists($koneksi, $schema, 'staff_calls')) {
+        $callFollowUpCols = [
+            'follow_up_action' => "ADD COLUMN `follow_up_action` ENUM('none','wait','confirm') NOT NULL DEFAULT 'none' AFTER `status`",
+            'follow_up_at' => 'ADD COLUMN `follow_up_at` TIMESTAMP NULL DEFAULT NULL AFTER `follow_up_action`',
+            'follow_up_by' => 'ADD COLUMN `follow_up_by` INT NULL DEFAULT NULL AFTER `follow_up_at`',
+        ];
+        foreach ($callFollowUpCols as $col => $fragment) {
+            if (!columnExists($koneksi, $schema, 'staff_calls', $col)) {
+                runAlter($koneksi, 'ALTER TABLE `staff_calls` ' . $fragment);
+                out("[OK] staff_calls.{$col} ditambahkan");
+            } else {
+                out("[OK] staff_calls.{$col} sudah ada");
+            }
+        }
+    }
+
+    $sqlHwat = <<<'SQL'
+CREATE TABLE IF NOT EXISTS `helpdesk_wa_action_tokens` (
+    `id` INT AUTO_INCREMENT PRIMARY KEY,
+    `token_hash` CHAR(64) NOT NULL,
+    `entity_type` ENUM('call','ticket') NOT NULL,
+    `entity_id` INT NOT NULL,
+    `admin_user_id` INT NOT NULL,
+    `expires_at` DATETIME NOT NULL,
+    `used_at` DATETIME NULL DEFAULT NULL,
+    `action_taken` ENUM('confirm','wait') NULL DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY `uq_helpdesk_wa_token_hash` (`token_hash`),
+    INDEX `idx_helpdesk_wa_entity` (`entity_type`, `entity_id`),
+    INDEX `idx_helpdesk_wa_admin` (`admin_user_id`),
+    INDEX `idx_helpdesk_wa_expires` (`expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+SQL;
+    if (!$koneksi->query($sqlHwat)) {
+        throw new RuntimeException('helpdesk_wa_action_tokens: ' . $koneksi->error);
+    }
+    out('[OK] Tabel helpdesk_wa_action_tokens (create if not exists)');
+
+    if (tableExists($koneksi, $schema, 'helpdesk_wa_action_tokens')) {
+        if (!columnExists($koneksi, $schema, 'helpdesk_wa_action_tokens', 'short_code')) {
+            runAlter($koneksi, 'ALTER TABLE `helpdesk_wa_action_tokens` ADD COLUMN `short_code` VARCHAR(12) NULL DEFAULT NULL AFTER `token_hash`');
+            runAlter($koneksi, 'ALTER TABLE `helpdesk_wa_action_tokens` ADD UNIQUE KEY `uq_helpdesk_wa_short_code` (`short_code`)');
+            out('[OK] helpdesk_wa_action_tokens.short_code ditambahkan');
+        } else {
+            out('[OK] helpdesk_wa_action_tokens.short_code sudah ada');
+        }
     }
 
     // --- helpdesk_it_access (barcode global) ---
@@ -433,7 +548,7 @@ SQL;
     }
 
     out('---');
-    out('Selesai. Skema selaras dengan live chat + kategori + denah + helpdesk IT.');
+    out('Selesai. Skema selaras dengan live chat + kategori + denah + helpdesk IT + WA konfirmasi.');
 } catch (Throwable $e) {
     out('GAGAL: ' . $e->getMessage());
     exit(1);

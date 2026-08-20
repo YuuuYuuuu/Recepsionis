@@ -43,9 +43,6 @@
                 <i class="bi bi-bell-slash"></i> Preferensi Notifikasi
             </a>
         <?php endif; ?>
-        <a class="nav-link <?= basename($_SERVER['PHP_SELF']) == 'live_chat.php' ? 'active' : '' ?>" href="<?= htmlspecialchars(function_exists('adminUrl') ? adminUrl('live_chat.php') : 'live_chat.php') ?>">
-            <i class="bi bi-chat-dots"></i> Helpdesk IT Live Chat
-        </a>
 
         <?php if ($showHelpdeskQrMenu): ?>
             <a class="nav-link <?= basename($_SERVER['PHP_SELF']) == 'helpdesk_it.php' ? 'active' : '' ?>" href="<?= htmlspecialchars(function_exists('adminUrl') ? adminUrl('helpdesk_it.php') : 'helpdesk_it.php') ?>">
@@ -58,13 +55,16 @@
                 <i class="bi bi-door-open"></i> Ruangan
             </a>
             <a class="nav-link <?= basename($_SERVER['PHP_SELF']) == 'floor_plans.php' ? 'active' : '' ?>" href="<?= htmlspecialchars(function_exists('adminUrl') ? adminUrl('floor_plans.php') : 'floor_plans.php') ?>">
-                <i class="bi bi-map"></i> Denah Lantai
+                <i class="bi bi-map"></i> Denah Ruangan
             </a>
             <a class="nav-link <?= basename($_SERVER['PHP_SELF']) == 'prodi.php' ? 'active' : '' ?>" href="<?= htmlspecialchars(function_exists('adminUrl') ? adminUrl('prodi.php') : 'prodi.php') ?>">
                 <i class="bi bi-mortarboard"></i> Program Studi
             </a>
 
             <div class="nav-section-label">Administrasi</div>
+            <a class="nav-link <?= basename($_SERVER['PHP_SELF']) == 'laporan.php' ? 'active' : '' ?>" href="<?= htmlspecialchars(function_exists('adminUrl') ? adminUrl('laporan.php') : 'laporan.php') ?>">
+                <i class="bi bi-file-earmark-bar-graph"></i> Laporan
+            </a>
             <a class="nav-link <?= basename($_SERVER['PHP_SELF']) == 'users.php' ? 'active' : '' ?>" href="<?= htmlspecialchars(function_exists('adminUrl') ? adminUrl('users.php') : 'users.php') ?>">
                 <i class="bi bi-person-gear"></i> Kelola User
             </a>

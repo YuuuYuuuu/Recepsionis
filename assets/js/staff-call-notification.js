@@ -520,17 +520,10 @@
         const notification = document.createElement('div');
         notification.className = 'staff-call-notification';
         notification.dataset.callId = call.id;
-        const isLive = !!(call.live_session_id && String(call.live_session_id).trim());
-        if (isLive) {
-            notification.dataset.liveSessionId = String(call.live_session_id).trim();
-        }
-        const acceptBtn = isLive
-            ? '<button type="button" class="scn-btn scn-btn--accept" onclick="acceptLiveChatFromNotification(' + call.id + ', this)">' +
-                '<i class="bi bi-check-circle-fill"></i> Terima panggilan</button>'
-            : '<button type="button" class="scn-btn scn-btn--accept" onclick="answerStaffCall(' + call.id + ', this)">' +
+        const acceptBtn = '<button type="button" class="scn-btn scn-btn--accept" onclick="answerStaffCall(' + call.id + ', this)">' +
                 '<i class="bi bi-check-circle-fill"></i> Terima panggilan</button>';
 
-        const title = isLive ? 'Live Chat Tamu' : 'Panggilan Staff';
+        const title = 'Panggilan Staff';
         const category = escapeHtml(call.category_name || 'Tanpa kategori');
         const phone = escapeHtml(call.visitor_phone || '-');
         const message = escapeHtml(call.message || '-');
@@ -569,7 +562,6 @@
             + '        <span class="scn-detail-label"><i class="bi bi-chat-left-text-fill"></i> Keperluan</span>'
             + '        <span class="scn-detail-value">' + message + '</span>'
             + '      </div>'
-            + (isLive ? '      <p class="scn-live-hint"><i class="bi bi-info-circle"></i> Setelah diterima, buka menu Live Chat untuk membalas.</p>' : '')
             + '    </div>'
             + '    <div class="scn-actions">'
             +          acceptBtn
@@ -997,63 +989,8 @@
     };
 
     window.acceptLiveChatFromNotification = function(callId, button) {
-        const el = document.querySelector('.staff-call-notification[data-call-id="' + callId + '"]');
-        const sid = el && el.dataset.liveSessionId ? el.dataset.liveSessionId : '';
-        if (!sid) {
-            alert('Sesi live tidak ditemukan. Buka menu Live Chat.');
-            return;
-        }
-        button.disabled = true;
-        button.innerHTML = '<i class="bi bi-hourglass-split"></i> Memproses...';
-
-        let activeSocket = null;
-        connectAdminSocket()
-            .then(function(socket) {
-                activeSocket = socket;
-                return new Promise(function(resolve, reject) {
-                    socket.emit('accept_request', { session_id: sid }, function(res) {
-                        if (res && res.ok) {
-                            resolve();
-                            return;
-                        }
-                        reject(new Error(res && res.error ? res.error : 'server_error'));
-                    });
-                });
-            })
-            .then(function() {
-                stopNotificationSound();
-                showTemporaryInfo(callId, 'Live chat diterima. Buka menu Live Chat untuk membalas.');
-                setTimeout(function() {
-                    removeNotification(callId);
-                    checkStaffCalls();
-                }, 1400);
-            })
-            .catch(function(error) {
-                console.error('Error accepting live chat:', error);
-                let message = 'Gagal menerima live chat.';
-                const code = error && error.message ? String(error.message) : '';
-                if (code === 'taken') {
-                    message = 'Live chat sudah diterima admin lain.';
-                } else if (code === 'ended') {
-                    message = 'Sesi live chat sudah berakhir.';
-                } else if (code === 'forbidden_category') {
-                    message = 'Anda tidak ditugaskan untuk topik chat ini.';
-                } else if (code === 'already_handled') {
-                    message = 'Permintaan sudah tidak pending.';
-                }
-                alert(message);
-                button.disabled = false;
-                button.innerHTML = '<i class="bi bi-check-circle"></i> Terima';
-            })
-            .finally(function() {
-                if (activeSocket) {
-                    try {
-                        activeSocket.disconnect();
-                    } catch (_) {
-                        // ignore
-                    }
-                }
-            });
+        // Live chat dinonaktifkan — terima sebagai panggilan staff biasa.
+        return window.answerStaffCall(callId, button);
     };
 
     window.answerStaffCall = function(callId, button) {
@@ -1075,8 +1012,6 @@
                     setTimeout(function() {
                         window.location.reload();
                     }, 500);
-                } else if (data.code === 'use_live_chat' && data.live_session_id) {
-                    window.acceptLiveChatFromNotification(callId, button);
                 } else {
                     alert(data.message || 'Gagal menandai panggilan sebagai terjawab');
                     button.disabled = false;

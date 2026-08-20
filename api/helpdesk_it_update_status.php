@@ -66,15 +66,16 @@ if (!$isAdmin && !recepsionis_user_can_receive_helpdesk_it_ticket($koneksi, $use
     exit;
 }
 
-$assignOnProgress = $status === 'in_progress'
+$shouldAssign = in_array($status, ['in_progress', 'resolved'], true)
     && ($assignedUserId === null || $assignedUserId <= 0)
+    && $userId > 0
     && recepsionis_column_exists($koneksi, 'helpdesk_it_tickets', 'assigned_user_id');
 
-if ($assignOnProgress) {
-    $stmt = $koneksi->prepare('UPDATE helpdesk_it_tickets SET status = ?, assigned_user_id = ? WHERE id = ?');
+if ($shouldAssign) {
+    $stmt = $koneksi->prepare('UPDATE helpdesk_it_tickets SET status = ?, assigned_user_id = ?, updated_at = NOW() WHERE id = ?');
     $stmt->bind_param('sii', $status, $userId, $ticketId);
 } else {
-    $stmt = $koneksi->prepare('UPDATE helpdesk_it_tickets SET status = ? WHERE id = ?');
+    $stmt = $koneksi->prepare('UPDATE helpdesk_it_tickets SET status = ?, updated_at = NOW() WHERE id = ?');
     $stmt->bind_param('si', $status, $ticketId);
 }
 
@@ -93,5 +94,5 @@ echo json_encode([
     'message' => 'Status tiket diperbarui.',
     'ticket_id' => $ticketId,
     'status' => $status,
-    'assigned_user_id' => $assignOnProgress ? $userId : $assignedUserId,
+    'assigned_user_id' => $shouldAssign ? $userId : $assignedUserId,
 ], JSON_UNESCAPED_UNICODE);

@@ -44,13 +44,15 @@ $tickets = [];
 
 if (recepsionis_table_exists($koneksi, 'helpdesk_it_tickets')) {
     $hasCategoryColumn = recepsionis_column_exists($koneksi, 'helpdesk_it_tickets', 'category_id');
+    $hasFollowUpColumn = recepsionis_column_exists($koneksi, 'helpdesk_it_tickets', 'follow_up_action');
+    $followUpSelect = $hasFollowUpColumn ? ', follow_up_action' : ", 'none' AS follow_up_action";
     $selectSql = $hasCategoryColumn
-        ? "SELECT id, nama, nomor, kelas, kendala, status, assigned_user_id, category_id, created_at
+        ? "SELECT id, nama, nomor, kelas, kendala, status, assigned_user_id, category_id, created_at{$followUpSelect}
            FROM helpdesk_it_tickets
            WHERE status = 'pending'
            ORDER BY created_at DESC
            LIMIT 50"
-        : "SELECT id, nama, nomor, kelas, kendala, status, assigned_user_id, created_at
+        : "SELECT id, nama, nomor, kelas, kendala, status, assigned_user_id, created_at{$followUpSelect}
            FROM helpdesk_it_tickets
            WHERE status = 'pending'
            ORDER BY created_at DESC
@@ -81,6 +83,7 @@ if (recepsionis_table_exists($koneksi, 'helpdesk_it_tickets')) {
                 'created_at' => (string) ($row['created_at'] ?? ''),
                 'time_ago' => helpdesk_it_time_ago($row['created_at'] ?? ''),
                 'assigned_user_id' => $assignedUserId,
+                'follow_up_action' => (string) ($row['follow_up_action'] ?? 'none'),
             ];
         }
     }

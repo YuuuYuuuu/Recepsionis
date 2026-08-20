@@ -511,7 +511,9 @@ function recepsionis_notify_helpdesk_it_targets(
     array $effectiveTargets,
     string $title,
     string $message,
-    string $waMessage
+    string $waMessage,
+    ?string $waEntityType = null,
+    ?int $waEntityId = null
 ): void {
     recepsionis_create_in_app_notification($koneksi, $title, $message);
 
@@ -537,8 +539,18 @@ function recepsionis_notify_helpdesk_it_targets(
     }
 
     try {
-        $waTargets = recepsionis_resolve_wa_targets_for_admins($koneksi, $effectiveTargets);
-        recepsionis_send_whatsapp_messages($koneksi, $waMessage, $waTargets['phones'] ?? []);
+        if ($waEntityType !== null && $waEntityId > 0) {
+            recepsionis_send_helpdesk_wa_with_action_links(
+                $koneksi,
+                $waMessage,
+                $waEntityType,
+                $waEntityId,
+                $effectiveTargets
+            );
+        } else {
+            $waTargets = recepsionis_collect_helpdesk_wa_delivery_phones($koneksi, $effectiveTargets);
+            recepsionis_send_whatsapp_messages($koneksi, $waMessage, $waTargets['phones'] ?? []);
+        }
     } catch (Throwable $e) {
         error_log('Helpdesk IT WhatsApp notification error: ' . $e->getMessage());
     }
@@ -870,6 +882,35 @@ function recepsionis_resolve_wa_targets_for_admins(mysqli $koneksi, array $admin
     ];
 }
 
+function recepsionis_whatsapp_response_is_success(?string $responseBody, int $httpCode): bool
+{
+    if ($httpCode < 200 || $httpCode >= 300) {
+        return false;
+    }
+
+    $decoded = json_decode((string) $responseBody, true);
+    if (!is_array($decoded)) {
+        return true;
+    }
+
+    if (array_key_exists('status', $decoded)) {
+        $status = $decoded['status'];
+        if ($status === true || $status === 1 || $status === 'true' || $status === 'success') {
+            return true;
+        }
+        if ($status === false || $status === 0 || $status === 'false') {
+            return false;
+        }
+    }
+
+    $detail = strtolower(trim((string) ($decoded['detail'] ?? $decoded['message'] ?? '')));
+    if ($detail !== '' && (strpos($detail, 'success') !== false || strpos($detail, 'queue') !== false)) {
+        return true;
+    }
+
+    return !array_key_exists('status', $decoded);
+}
+
 function recepsionis_send_whatsapp_messages(mysqli $koneksi, string $message, array $phones): array
 {
     $wa = recepsionis_get_wa_settings($koneksi);
@@ -883,6 +924,19 @@ function recepsionis_send_whatsapp_messages(mysqli $koneksi, string $message, ar
             'responses' => [],
             'invalid' => $invalid,
             'enabled' => $wa['wa_enabled'],
+            'reason' => !$wa['wa_enabled'] ? 'disabled' : (trim((string) $wa['wa_api_url']) === '' ? 'missing_api_url' : 'no_phones'),
+        ];
+    }
+
+    if (!function_exists('curl_init')) {
+        error_log('WhatsApp send failed: PHP cURL extension is not available.');
+
+        return [
+            'sent' => false,
+            'responses' => [],
+            'invalid' => $invalid,
+            'enabled' => true,
+            'reason' => 'curl_missing',
         ];
     }
 
@@ -894,7 +948,6 @@ function recepsionis_send_whatsapp_messages(mysqli $koneksi, string $message, ar
         }
         $payload_arr = [
             'target' => $phone_sanitized,
-            'phone' => $phone_sanitized,
             'message' => $message,
         ];
         $ch = curl_init();
@@ -909,7 +962,10 @@ function recepsionis_send_whatsapp_messages(mysqli $koneksi, string $message, ar
             curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
         }
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 8);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
         $resp = curl_exec($ch);
         $httpcode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $entry = [
@@ -918,15 +974,12 @@ function recepsionis_send_whatsapp_messages(mysqli $koneksi, string $message, ar
             'response' => $resp === false ? null : (string) $resp,
             'error' => curl_errno($ch) ? curl_error($ch) : null,
         ];
-        if (!curl_errno($ch) && $httpcode >= 200 && $httpcode < 300) {
-            $okByBody = true;
-            $decoded = json_decode((string) $resp, true);
-            if (is_array($decoded) && array_key_exists('status', $decoded)) {
-                $okByBody = ($decoded['status'] === true || $decoded['status'] === 1 || $decoded['status'] === 'true');
-            }
-            if ($okByBody) {
-                $sentAny = true;
-            }
+        if (!curl_errno($ch) && recepsionis_whatsapp_response_is_success($entry['response'], $httpcode)) {
+            $sentAny = true;
+        } elseif (!curl_errno($ch)) {
+            error_log('WhatsApp send rejected for ' . $phone_sanitized . ': HTTP ' . $httpcode . ' body=' . (string) $entry['response']);
+        } else {
+            error_log('WhatsApp send curl error for ' . $phone_sanitized . ': ' . (string) $entry['error']);
         }
         curl_close($ch);
         $responses[] = $entry;
@@ -937,6 +990,7 @@ function recepsionis_send_whatsapp_messages(mysqli $koneksi, string $message, ar
         'responses' => $responses,
         'invalid' => $invalid,
         'enabled' => true,
+        'reason' => $sentAny ? 'ok' : 'send_failed',
     ];
 }
 
@@ -1169,4 +1223,557 @@ function recepsionis_create_in_app_notification(mysqli $koneksi, string $title, 
     } catch (Throwable $e) {
         error_log('Notification insert error: ' . $e->getMessage());
     }
+}
+
+function recepsionis_follow_up_action_label(string $action): string
+{
+    if ($action === 'confirm') {
+        return 'Ditindaklanjuti';
+    }
+    if ($action === 'wait') {
+        return 'Dalam antrian';
+    }
+
+    return '';
+}
+
+function recepsionis_build_helpdesk_action_url(string $linkKey): string
+{
+    return rtrim(recepsionis_get_public_base_url(), '/') . '/visitor/h.php?c=' . rawurlencode($linkKey);
+}
+
+function recepsionis_hash_helpdesk_wa_action_token(string $rawToken): string
+{
+    return hash('sha256', $rawToken);
+}
+
+function recepsionis_generate_helpdesk_short_code(): string
+{
+    $alphabet = '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+    $max = strlen($alphabet) - 1;
+    $code = '';
+    for ($i = 0; $i < 8; $i++) {
+        $code .= $alphabet[random_int(0, $max)];
+    }
+
+    return $code;
+}
+
+function recepsionis_generate_unique_helpdesk_short_code(mysqli $koneksi): ?string
+{
+    if (!recepsionis_column_exists($koneksi, 'helpdesk_wa_action_tokens', 'short_code')) {
+        return null;
+    }
+
+    for ($attempt = 0; $attempt < 8; $attempt++) {
+        $code = recepsionis_generate_helpdesk_short_code();
+        $stmt = $koneksi->prepare('SELECT id FROM helpdesk_wa_action_tokens WHERE short_code = ? LIMIT 1');
+        if (!$stmt) {
+            return null;
+        }
+        $stmt->bind_param('s', $code);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $exists = $res && $res->num_rows > 0;
+        $stmt->close();
+        if (!$exists) {
+            return $code;
+        }
+    }
+
+    return null;
+}
+
+function recepsionis_lookup_helpdesk_wa_token_row(mysqli $koneksi, string $linkKey): ?array
+{
+    $linkKey = trim($linkKey);
+    if ($linkKey === '' || !recepsionis_table_exists($koneksi, 'helpdesk_wa_action_tokens')) {
+        return null;
+    }
+
+    if (
+        recepsionis_column_exists($koneksi, 'helpdesk_wa_action_tokens', 'short_code')
+        && strlen($linkKey) <= 16
+        && preg_match('/^[A-Za-z0-9]+$/', $linkKey) === 1
+    ) {
+        $stmt = $koneksi->prepare('SELECT * FROM helpdesk_wa_action_tokens WHERE short_code = ? LIMIT 1');
+        if ($stmt) {
+            $stmt->bind_param('s', $linkKey);
+            $stmt->execute();
+            $res = $stmt->get_result();
+            $row = $res ? $res->fetch_assoc() : null;
+            $stmt->close();
+            if ($row) {
+                return $row;
+            }
+        }
+    }
+
+    if (strlen($linkKey) < 32) {
+        return null;
+    }
+
+    $tokenHash = recepsionis_hash_helpdesk_wa_action_token($linkKey);
+    $stmt = $koneksi->prepare('SELECT * FROM helpdesk_wa_action_tokens WHERE token_hash = ? LIMIT 1');
+    if (!$stmt) {
+        return null;
+    }
+    $stmt->bind_param('s', $tokenHash);
+    $stmt->execute();
+    $res = $stmt->get_result();
+    $row = $res ? $res->fetch_assoc() : null;
+    $stmt->close();
+
+    return $row ?: null;
+}
+
+function recepsionis_create_helpdesk_wa_action_token(
+    mysqli $koneksi,
+    string $entityType,
+    int $entityId,
+    int $adminUserId,
+    int $ttlHours = 72
+): ?array {
+    if (
+        !recepsionis_table_exists($koneksi, 'helpdesk_wa_action_tokens')
+        || !in_array($entityType, ['call', 'ticket'], true)
+        || $entityId <= 0
+        || $adminUserId <= 0
+    ) {
+        return null;
+    }
+
+    $rawToken = bin2hex(random_bytes(32));
+    $tokenHash = recepsionis_hash_helpdesk_wa_action_token($rawToken);
+    $shortCode = recepsionis_generate_unique_helpdesk_short_code($koneksi);
+    $expiresAt = date('Y-m-d H:i:s', time() + max(1, $ttlHours) * 3600);
+
+    if ($shortCode !== null) {
+        $stmt = $koneksi->prepare(
+            'INSERT INTO helpdesk_wa_action_tokens (token_hash, short_code, entity_type, entity_id, admin_user_id, expires_at)
+             VALUES (?, ?, ?, ?, ?, ?)'
+        );
+        if (!$stmt) {
+            error_log('Helpdesk WA token prepare failed: ' . $koneksi->error);
+
+            return null;
+        }
+        $stmt->bind_param('sssiis', $tokenHash, $shortCode, $entityType, $entityId, $adminUserId, $expiresAt);
+    } else {
+        $stmt = $koneksi->prepare(
+            'INSERT INTO helpdesk_wa_action_tokens (token_hash, entity_type, entity_id, admin_user_id, expires_at)
+             VALUES (?, ?, ?, ?, ?)'
+        );
+        if (!$stmt) {
+            error_log('Helpdesk WA token prepare failed: ' . $koneksi->error);
+
+            return null;
+        }
+        $stmt->bind_param('ssiis', $tokenHash, $entityType, $entityId, $adminUserId, $expiresAt);
+    }
+
+    $ok = $stmt->execute();
+    if (!$ok) {
+        error_log('Helpdesk WA token insert failed: ' . $stmt->error);
+    }
+    $stmt->close();
+
+    if (!$ok) {
+        return null;
+    }
+
+    return [
+        'raw' => $rawToken,
+        'short_code' => $shortCode ?? $rawToken,
+        'link_key' => $shortCode ?? $rawToken,
+    ];
+}
+
+function recepsionis_collect_helpdesk_wa_delivery_phones(mysqli $koneksi, array $adminUsers): array
+{
+    $fromUsers = recepsionis_collect_wa_phones_from_users($adminUsers);
+    $fallback = recepsionis_collect_wa_fallback_phones($koneksi);
+    $phones = [];
+
+    foreach (array_merge($fromUsers['phones'], $fallback['phones']) as $phone) {
+        $phones[(string) $phone] = true;
+    }
+
+    return [
+        'phones' => array_keys($phones),
+        'invalid' => array_merge($fromUsers['invalid'], $fallback['invalid']),
+    ];
+}
+
+function recepsionis_send_helpdesk_wa_with_action_links(
+    mysqli $koneksi,
+    string $baseMessage,
+    string $entityType,
+    int $entityId,
+    array $effectiveTargets
+): array {
+    $result = [
+        'sent' => false,
+        'mode' => 'none',
+        'responses' => [],
+        'errors' => [],
+    ];
+
+    if (!in_array($entityType, ['call', 'ticket'], true) || $entityId <= 0) {
+        $result['errors'][] = 'invalid_entity';
+
+        return $result;
+    }
+
+    if (empty($effectiveTargets)) {
+        $result['errors'][] = 'no_targets';
+
+        return $result;
+    }
+
+    $sentPhones = [];
+    foreach ($effectiveTargets as $targetAdmin) {
+        $adminUserId = (int) ($targetAdmin['id'] ?? 0);
+        if ($adminUserId <= 0) {
+            continue;
+        }
+
+        $tokenBundle = recepsionis_create_helpdesk_wa_action_token($koneksi, $entityType, $entityId, $adminUserId);
+        if ($tokenBundle === null) {
+            $result['errors'][] = 'token_failed:' . $adminUserId;
+            continue;
+        }
+
+        $actionUrl = recepsionis_build_helpdesk_action_url((string) $tokenBundle['link_key']);
+        $message = rtrim($baseMessage) . "\n\nTindak lanjut:\n" . $actionUrl;
+
+        $waTargets = recepsionis_collect_helpdesk_wa_delivery_phones($koneksi, [$targetAdmin]);
+        $phones = $waTargets['phones'] ?? [];
+        $phones = array_values(array_diff($phones, $sentPhones));
+        if (empty($phones)) {
+            $result['errors'][] = 'no_phone:' . $adminUserId;
+            continue;
+        }
+
+        $sendResult = recepsionis_send_whatsapp_messages($koneksi, $message, $phones);
+        $result['responses'] = array_merge($result['responses'], $sendResult['responses'] ?? []);
+        if (!empty($sendResult['sent'])) {
+            $result['sent'] = true;
+            $result['mode'] = 'per_admin';
+            $sentPhones = array_merge($sentPhones, $phones);
+        }
+    }
+
+    if ($result['sent']) {
+        return $result;
+    }
+
+    $allTargets = recepsionis_collect_helpdesk_wa_delivery_phones($koneksi, $effectiveTargets);
+    $phones = $allTargets['phones'] ?? [];
+    if (empty($phones)) {
+        error_log(
+            'Helpdesk WA not sent for ' . $entityType . '#' . $entityId
+            . ': no valid phone numbers. errors=' . json_encode($result['errors'], JSON_UNESCAPED_UNICODE)
+        );
+
+        return $result;
+    }
+
+    $message = rtrim($baseMessage);
+    $firstAdminId = (int) ($effectiveTargets[0]['id'] ?? 0);
+    if ($firstAdminId > 0) {
+        $tokenBundle = recepsionis_create_helpdesk_wa_action_token($koneksi, $entityType, $entityId, $firstAdminId);
+        if ($tokenBundle !== null) {
+            $message .= "\n\nTindak lanjut:\n" . recepsionis_build_helpdesk_action_url((string) $tokenBundle['link_key']);
+        } else {
+            $result['errors'][] = 'fallback_token_failed';
+        }
+    }
+
+    $sendResult = recepsionis_send_whatsapp_messages($koneksi, $message, $phones);
+    $result['responses'] = array_merge($result['responses'], $sendResult['responses'] ?? []);
+    $result['sent'] = !empty($sendResult['sent']);
+    $result['mode'] = $result['sent'] ? 'fallback' : 'failed';
+
+    if (!$result['sent']) {
+        error_log(
+            'Helpdesk WA fallback failed for ' . $entityType . '#' . $entityId
+            . ': ' . json_encode($sendResult, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+        );
+    }
+
+    return $result;
+}
+
+function recepsionis_send_helpdesk_reporter_whatsapp(mysqli $koneksi, string $phone, string $message): bool
+{
+    $phone = trim($phone);
+    if ($phone === '') {
+        return false;
+    }
+
+    $result = recepsionis_send_whatsapp_messages($koneksi, $message, [$phone]);
+
+    return !empty($result['sent']);
+}
+
+function recepsionis_get_helpdesk_entity_row(mysqli $koneksi, string $entityType, int $entityId): ?array
+{
+    if ($entityId <= 0) {
+        return null;
+    }
+
+    if ($entityType === 'ticket' && recepsionis_table_exists($koneksi, 'helpdesk_it_tickets')) {
+        $stmt = $koneksi->prepare('SELECT * FROM helpdesk_it_tickets WHERE id = ? LIMIT 1');
+        $stmt->bind_param('i', $entityId);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $row = $res ? $res->fetch_assoc() : null;
+        $stmt->close();
+
+        return $row ?: null;
+    }
+
+    if ($entityType === 'call' && recepsionis_table_exists($koneksi, 'staff_calls')) {
+        $stmt = $koneksi->prepare('SELECT * FROM staff_calls WHERE id = ? LIMIT 1');
+        $stmt->bind_param('i', $entityId);
+        $stmt->execute();
+        $res = $stmt->get_result();
+        $row = $res ? $res->fetch_assoc() : null;
+        $stmt->close();
+
+        return $row ?: null;
+    }
+
+    return null;
+}
+
+function recepsionis_helpdesk_entity_is_actionable(array $entity, string $entityType): bool
+{
+    $status = (string) ($entity['status'] ?? '');
+    if ($entityType === 'ticket') {
+        return in_array($status, ['pending', 'in_progress'], true);
+    }
+
+    return $status === 'pending';
+}
+
+function recepsionis_validate_helpdesk_wa_action_token(mysqli $koneksi, string $linkKey): array
+{
+    $linkKey = trim($linkKey);
+    if ($linkKey === '' || !recepsionis_table_exists($koneksi, 'helpdesk_wa_action_tokens')) {
+        return ['ok' => false, 'error' => 'Link tidak valid.', 'token' => null, 'entity' => null, 'entity_type' => null];
+    }
+
+    $tokenRow = recepsionis_lookup_helpdesk_wa_token_row($koneksi, $linkKey);
+    if (!$tokenRow) {
+        return ['ok' => false, 'error' => 'Link tidak valid atau sudah kedaluwarsa.', 'token' => null, 'entity' => null, 'entity_type' => null];
+    }
+
+    $entityType = (string) ($tokenRow['entity_type'] ?? '');
+    $entityId = (int) ($tokenRow['entity_id'] ?? 0);
+    $entity = recepsionis_get_helpdesk_entity_row($koneksi, $entityType, $entityId);
+
+    if (!$entity) {
+        return ['ok' => false, 'error' => 'Pengaduan tidak ditemukan.', 'token' => $tokenRow, 'entity' => null, 'entity_type' => $entityType];
+    }
+
+    if (!empty($tokenRow['used_at']) && !empty($tokenRow['action_taken'])) {
+        return [
+            'ok' => true,
+            'already_used' => true,
+            'error' => '',
+            'token' => $tokenRow,
+            'entity' => $entity,
+            'entity_type' => $entityType,
+            'action_taken' => (string) $tokenRow['action_taken'],
+        ];
+    }
+
+    if (strtotime((string) ($tokenRow['expires_at'] ?? '')) < time()) {
+        return ['ok' => false, 'error' => 'Link sudah kedaluwarsa.', 'token' => $tokenRow, 'entity' => $entity, 'entity_type' => $entityType];
+    }
+
+    if (!recepsionis_helpdesk_entity_is_actionable($entity, $entityType)) {
+        return ['ok' => false, 'error' => 'Pengaduan ini sudah tidak dapat diproses.', 'token' => $tokenRow, 'entity' => $entity, 'entity_type' => $entityType];
+    }
+
+    return [
+        'ok' => true,
+        'already_used' => false,
+        'error' => '',
+        'token' => $tokenRow,
+        'entity' => $entity,
+        'entity_type' => $entityType,
+        'action_taken' => null,
+    ];
+}
+
+function recepsionis_build_helpdesk_reporter_message(
+    string $action,
+    string $reporterName,
+    string $entityType,
+    int $entityId
+): string {
+    $ref = $entityType === 'ticket'
+        ? 'Tiket #' . $entityId
+        : 'Panggilan #' . $entityId;
+    $greeting = 'Halo ' . $reporterName . ',';
+
+    if ($action === 'confirm') {
+        return $greeting . ' pengaduan Helpdesk ' . $ref . ' sedang ditindaklanjuti oleh tim kami. Terima kasih.';
+    }
+
+    return $greeting . ' pengaduan Helpdesk ' . $ref . ' sudah kami terima dan masih dalam antrian. Kami akan segera menghubungi Anda.';
+}
+
+function recepsionis_apply_helpdesk_wa_action(mysqli $koneksi, array $tokenRow, string $action): array
+{
+    if (!in_array($action, ['confirm', 'wait'], true)) {
+        return ['success' => false, 'message' => 'Aksi tidak valid.'];
+    }
+
+    $entityType = (string) ($tokenRow['entity_type'] ?? '');
+    $entityId = (int) ($tokenRow['entity_id'] ?? 0);
+    $adminUserId = (int) ($tokenRow['admin_user_id'] ?? 0);
+    $tokenId = (int) ($tokenRow['id'] ?? 0);
+
+    if ($tokenId <= 0 || $entityId <= 0 || $adminUserId <= 0) {
+        return ['success' => false, 'message' => 'Token tidak valid.'];
+    }
+
+    if (!empty($tokenRow['used_at']) && !empty($tokenRow['action_taken'])) {
+        return [
+            'success' => true,
+            'message' => 'Aksi ini sudah diproses sebelumnya.',
+            'action' => (string) $tokenRow['action_taken'],
+            'already_used' => true,
+        ];
+    }
+
+    $entity = recepsionis_get_helpdesk_entity_row($koneksi, $entityType, $entityId);
+    if (!$entity || !recepsionis_helpdesk_entity_is_actionable($entity, $entityType)) {
+        return ['success' => false, 'message' => 'Pengaduan sudah tidak dapat diproses.'];
+    }
+
+    $reporterName = $entityType === 'ticket'
+        ? trim((string) ($entity['nama'] ?? 'Pelapor'))
+        : trim((string) ($entity['visitor_name'] ?? 'Pelapor'));
+    $reporterPhone = $entityType === 'ticket'
+        ? trim((string) ($entity['nomor'] ?? ''))
+        : trim((string) ($entity['visitor_phone'] ?? ''));
+
+    if ($entityType === 'ticket') {
+        $hasFollowUp = recepsionis_column_exists($koneksi, 'helpdesk_it_tickets', 'follow_up_action');
+        $hasAssign = recepsionis_column_exists($koneksi, 'helpdesk_it_tickets', 'assigned_user_id');
+        $assignedUserId = isset($entity['assigned_user_id']) ? (int) $entity['assigned_user_id'] : 0;
+
+        if ($action === 'confirm') {
+            if ($hasAssign && ($assignedUserId <= 0)) {
+                recepsionis_assign_helpdesk_it_ticket($koneksi, $entityId, $adminUserId);
+            }
+            if ($hasFollowUp) {
+                $stmt = $koneksi->prepare(
+                    "UPDATE helpdesk_it_tickets
+                     SET status = 'in_progress', follow_up_action = 'confirm', follow_up_at = NOW(), follow_up_by = ?
+                     WHERE id = ? AND status IN ('pending', 'in_progress')"
+                );
+                $stmt->bind_param('ii', $adminUserId, $entityId);
+            } else {
+                $stmt = $koneksi->prepare(
+                    "UPDATE helpdesk_it_tickets SET status = 'in_progress' WHERE id = ? AND status IN ('pending', 'in_progress')"
+                );
+                $stmt->bind_param('i', $entityId);
+            }
+        } else {
+            if ($hasFollowUp) {
+                $stmt = $koneksi->prepare(
+                    "UPDATE helpdesk_it_tickets
+                     SET status = 'pending', follow_up_action = 'wait', follow_up_at = NOW(), follow_up_by = ?
+                     WHERE id = ? AND status IN ('pending', 'in_progress')"
+                );
+                $stmt->bind_param('ii', $adminUserId, $entityId);
+            } else {
+                $stmt = $koneksi->prepare(
+                    "UPDATE helpdesk_it_tickets SET status = 'pending' WHERE id = ? AND status IN ('pending', 'in_progress')"
+                );
+                $stmt->bind_param('i', $entityId);
+            }
+        }
+        $stmt->execute();
+        $updated = $stmt->affected_rows > 0;
+        $stmt->close();
+
+        if (!$updated) {
+            return ['success' => false, 'message' => 'Gagal memperbarui tiket.'];
+        }
+    } else {
+        $hasFollowUp = recepsionis_column_exists($koneksi, 'staff_calls', 'follow_up_action');
+        $categoryId = (int) ($entity['category_id'] ?? 0);
+        $assignedUserId = (int) ($entity['assigned_user_id'] ?? 0);
+
+        if ($action === 'confirm' && $assignedUserId <= 0) {
+            recepsionis_assign_staff_call(
+                $koneksi,
+                $entityId,
+                $adminUserId,
+                $adminUserId,
+                $categoryId,
+                'PIC ditugaskan via konfirmasi WhatsApp.',
+                ['source' => 'helpdesk_wa_action']
+            );
+        }
+
+        if ($hasFollowUp) {
+            $followUp = $action === 'confirm' ? 'confirm' : 'wait';
+            $stmt = $koneksi->prepare(
+                "UPDATE staff_calls
+                 SET follow_up_action = ?, follow_up_at = NOW(), follow_up_by = ?
+                 WHERE id = ? AND status = 'pending'"
+            );
+            $stmt->bind_param('sii', $followUp, $adminUserId, $entityId);
+            $stmt->execute();
+            $updated = $stmt->affected_rows > 0;
+            $stmt->close();
+        } else {
+            $updated = true;
+        }
+
+        if (!$updated) {
+            return ['success' => false, 'message' => 'Gagal memperbarui panggilan.'];
+        }
+
+        recepsionis_log_staff_call_event(
+            $koneksi,
+            $entityId,
+            $action === 'confirm' ? 'wa_confirmed' : 'wa_queued',
+            $adminUserId,
+            $adminUserId,
+            $categoryId > 0 ? $categoryId : null,
+            $action === 'confirm'
+                ? 'PIC mengonfirmasi penanganan via link WhatsApp.'
+                : 'PIC menandai pengaduan dalam antrian via link WhatsApp.',
+            ['source' => 'helpdesk_wa_action', 'action' => $action]
+        );
+    }
+
+    $stmt = $koneksi->prepare(
+        'UPDATE helpdesk_wa_action_tokens SET used_at = NOW(), action_taken = ? WHERE id = ? AND used_at IS NULL'
+    );
+    $stmt->bind_param('si', $action, $tokenId);
+    $stmt->execute();
+    $stmt->close();
+
+    $reporterMessage = recepsionis_build_helpdesk_reporter_message($action, $reporterName, $entityType, $entityId);
+    $reporterNotified = recepsionis_send_helpdesk_reporter_whatsapp($koneksi, $reporterPhone, $reporterMessage);
+
+    return [
+        'success' => true,
+        'message' => $reporterNotified
+            ? 'Terima kasih. Pelapor telah diberitahu via WhatsApp.'
+            : 'Status diperbarui. Notifikasi WhatsApp ke pelapor gagal atau nomor tidak valid.',
+        'action' => $action,
+        'reporter_notified' => $reporterNotified,
+        'already_used' => false,
+    ];
 }

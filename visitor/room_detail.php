@@ -53,16 +53,19 @@ $main_image = reset($images);
 $floor_plan = null;
 $room_gedung = trim((string) ($room['gedung'] ?? ''));
 $room_lantai = trim((string) ($room['lantai'] ?? ''));
-if ($room_gedung !== '' && $room_lantai !== '') {
-    $fp_stmt = $koneksi->prepare('SELECT * FROM floor_plans WHERE gedung = ? AND lantai = ? LIMIT 1');
-    if ($fp_stmt) {
-        $fp_stmt->bind_param('ss', $room_gedung, $room_lantai);
-        $fp_stmt->execute();
-        $fp_res = $fp_stmt->get_result();
+$room_id_for_fp = (int) ($room['id'] ?? 0);
+
+// Denah ketat 1:1 — hanya tampil jika terikat room_id ruangan ini
+if ($room_id_for_fp > 0) {
+    $fp_by_room = $koneksi->prepare('SELECT * FROM floor_plans WHERE room_id = ? LIMIT 1');
+    if ($fp_by_room) {
+        $fp_by_room->bind_param('i', $room_id_for_fp);
+        $fp_by_room->execute();
+        $fp_res = $fp_by_room->get_result();
         if ($fp_res && $fp_res->num_rows > 0) {
             $floor_plan = $fp_res->fetch_assoc();
         }
-        $fp_stmt->close();
+        $fp_by_room->close();
     }
 }
 
@@ -646,12 +649,8 @@ $floor_plan_image_url = $has_floor_plan_image ? visitor_asset_url($floor_plan['g
                             <i class="bi bi-map display-4 text-secondary mb-3 d-block"></i>
                             <p class="mb-2"><strong>Denah belum tersedia</strong></p>
                             <p class="small mb-0">
-                                <?php if ($room_gedung !== '' && $room_lantai !== ''): ?>
-                                    Belum ada denah untuk <strong>Gedung <?= htmlspecialchars($room_gedung) ?></strong>, Lantai <strong><?= htmlspecialchars($room_lantai) ?></strong>.
-                                    Admin dapat mengunggah di menu Denah Lantai.
-                                <?php else: ?>
-                                    Data gedung/lantai ruangan belum lengkap.
-                                <?php endif; ?>
+                                Belum ada denah khusus untuk ruangan ini.
+                                Admin dapat mengunggah di menu <strong>Denah Ruangan</strong> dan memilih ruangan ini.
                             </p>
                             <?php if (!empty($room['lokasi'])): ?>
                                 <p class="mt-3 mb-0"><i class="bi bi-geo-alt"></i> <?= htmlspecialchars($room['lokasi']) ?></p>

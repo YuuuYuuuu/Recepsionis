@@ -53,6 +53,60 @@ if (is_file(BASE_PATH . '/config.local.php')) {
     require_once BASE_PATH . '/config.local.php';
 }
 
+/**
+ * URL publik untuk link di WhatsApp / email (harus bisa diakses dari HP admin).
+ * Prioritas: PUBLIC_BASE_URL (config.local) → settings.public_base_url → BASE_URL.
+ * Host lokal selalu pakai http agar tidak kena ERR_SSL_PROTOCOL_ERROR.
+ */
+if (!function_exists('recepsionis_get_public_base_url')) {
+    function recepsionis_get_public_base_url(): string
+    {
+        $url = '';
+        if (defined('PUBLIC_BASE_URL') && trim((string) PUBLIC_BASE_URL) !== '') {
+            $url = trim((string) PUBLIC_BASE_URL);
+        } elseif (isset($GLOBALS['koneksi']) && $GLOBALS['koneksi'] instanceof mysqli) {
+            $koneksi = $GLOBALS['koneksi'];
+            if (
+                function_exists('recepsionis_table_exists')
+                && recepsionis_table_exists($koneksi, 'settings')
+            ) {
+                $res = $koneksi->query("SELECT setting_value FROM settings WHERE setting_key = 'public_base_url' LIMIT 1");
+                if ($res && $res->num_rows > 0) {
+                    $url = trim((string) $res->fetch_assoc()['setting_value']);
+                }
+            }
+        }
+
+        if ($url === '') {
+            $url = defined('BASE_URL') ? (string) BASE_URL : recepsionis_detect_base_url();
+        }
+
+        $url = rtrim($url, '/') . '/';
+        $parsed = parse_url($url);
+        if (!is_array($parsed)) {
+            return $url;
+        }
+
+        $host = strtolower((string) ($parsed['host'] ?? ''));
+        $isLocal = in_array($host, ['localhost', '127.0.0.1', '::1'], true)
+            || str_starts_with($host, '192.168.')
+            || str_starts_with($host, '10.');
+
+        if ($isLocal) {
+            $scheme = 'http';
+            $port = isset($parsed['port']) ? ':' . (int) $parsed['port'] : '';
+            $path = (string) ($parsed['path'] ?? '/');
+            if ($path === '') {
+                $path = '/';
+            }
+
+            return $scheme . '://' . ($parsed['host'] ?? 'localhost') . $port . $path;
+        }
+
+        return $url;
+    }
+}
+
 // URL server Socket.io (Node realtime-server). Sesuaikan di VPS / produksi.
 if (!defined('LIVE_SOCKET_URL')) {
     define('LIVE_SOCKET_URL', 'http://127.0.0.1:3001');
@@ -249,3 +303,4 @@ function generateQueueNumber($host_id) {
 }
 
 require_once BASE_PATH . '/lib/visitor_sync.php';
+require_once BASE_PATH . '/lib/tv_info.php';

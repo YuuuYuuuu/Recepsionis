@@ -237,6 +237,98 @@ $rooms = $koneksi->query("SELECT * FROM rooms WHERE status_aktif = 1 ORDER BY ge
             max-height: calc(82vh - 88px);
             overflow-y: auto;
             padding: 1.25rem 1.5rem;
+            position: relative;
+        }
+
+        .rooms-scroll-hint {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 30;
+            pointer-events: none;
+            display: flex;
+            justify-content: center;
+            padding: 2.5rem 1rem 1.1rem;
+            background: linear-gradient(to top, rgba(255, 255, 255, 0.98) 38%, rgba(255, 255, 255, 0));
+            opacity: 0;
+            transform: translateY(14px);
+            transition: opacity 0.4s ease, transform 0.4s ease;
+        }
+
+        .rooms-scroll-hint.is-visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .rooms-scroll-hint.is-hiding {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+
+        .rooms-scroll-hint-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.85rem 1.15rem 0.7rem;
+            border-radius: 18px;
+            background: rgba(15, 23, 42, 0.82);
+            color: #fff;
+            box-shadow: 0 12px 32px rgba(15, 23, 42, 0.28);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+        }
+
+        .rooms-scroll-silhouette {
+            width: 42px;
+            height: 54px;
+            position: relative;
+            animation: roomsScrollSilhouetteBob 1.8s ease-in-out infinite;
+        }
+
+        .rooms-scroll-silhouette svg {
+            width: 100%;
+            height: 100%;
+            display: block;
+            fill: #fff;
+        }
+
+        .rooms-scroll-hint-text {
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+            opacity: 0.95;
+        }
+
+        .rooms-scroll-arrows {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0;
+            margin-top: 0.1rem;
+            color: #93c5fd;
+            font-size: 1rem;
+            line-height: 0.55;
+            animation: roomsScrollArrowBounce 1.2s ease-in-out infinite;
+        }
+
+        @keyframes roomsScrollSilhouetteBob {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(4px); }
+        }
+
+        @keyframes roomsScrollArrowBounce {
+            0%, 100% { transform: translateY(0); opacity: 0.55; }
+            50% { transform: translateY(6px); opacity: 1; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .rooms-scroll-silhouette,
+            .rooms-scroll-arrows {
+                animation: none;
+            }
         }
 
         #roomsModal .room-thumbnail {
@@ -273,7 +365,24 @@ $rooms = $koneksi->query("SELECT * FROM rooms WHERE status_aktif = 1 ORDER BY ge
                     <h5 class="modal-title"><i class="bi bi-door-open"></i> Daftar Ruangan</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body">
+                <div class="modal-body" id="roomsModalBody">
+                    <div class="rooms-scroll-hint" id="roomsScrollHint" aria-hidden="true">
+                        <div class="rooms-scroll-hint-card">
+                            <div class="rooms-scroll-silhouette" aria-hidden="true">
+                                <svg viewBox="0 0 48 64" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="">
+                                    <circle cx="24" cy="10" r="8"/>
+                                    <path d="M14 24c0-4 4-6 10-6s10 2 10 6v4H14v-4z"/>
+                                    <path d="M10 30c2 10 6 16 14 16s12-6 14-16l-6 2c-1 6-4 10-8 10s-7-4-8-10l-6-2z"/>
+                                    <path d="M30 34l10 18 4-2-8-14 6-4-3-5-9 7z"/>
+                                </svg>
+                            </div>
+                            <div class="rooms-scroll-hint-text">Gulir ke bawah</div>
+                            <div class="rooms-scroll-arrows" aria-hidden="true">
+                                <i class="bi bi-chevron-down"></i>
+                                <i class="bi bi-chevron-down"></i>
+                            </div>
+                        </div>
+                    </div>
                     <div class="row">
                         <?php 
                         $rooms->data_seek(0);
@@ -382,8 +491,83 @@ $rooms = $koneksi->query("SELECT * FROM rooms WHERE status_aktif = 1 ORDER BY ge
     <script src="../assets/js/idle-redirect.js"></script>
     <script>
         (function () {
-            if (window.__AUTO_OPEN_MODAL__ !== 'rooms') return;
             const modalEl = document.getElementById('roomsModal');
+            const modalBody = document.getElementById('roomsModalBody');
+            const scrollHint = document.getElementById('roomsScrollHint');
+            let hideTimer = null;
+            let scrollListener = null;
+
+            function isScrollable(el) {
+                return el && el.scrollHeight > el.clientHeight + 8;
+            }
+
+            function hideScrollHint() {
+                if (!scrollHint || scrollHint.classList.contains('is-hiding')) {
+                    return;
+                }
+                scrollHint.classList.remove('is-visible');
+                scrollHint.classList.add('is-hiding');
+                window.setTimeout(function () {
+                    scrollHint.classList.remove('is-hiding');
+                    scrollHint.setAttribute('aria-hidden', 'true');
+                }, 400);
+            }
+
+            function showScrollHint() {
+                if (!modalBody || !scrollHint || !isScrollable(modalBody)) {
+                    return;
+                }
+
+                scrollHint.setAttribute('aria-hidden', 'false');
+                scrollHint.classList.remove('is-hiding');
+                requestAnimationFrame(function () {
+                    scrollHint.classList.add('is-visible');
+                });
+
+                if (hideTimer) {
+                    clearTimeout(hideTimer);
+                }
+                hideTimer = window.setTimeout(hideScrollHint, 4200);
+
+                if (scrollListener) {
+                    modalBody.removeEventListener('scroll', scrollListener);
+                }
+                scrollListener = function () {
+                    if (modalBody.scrollTop > 12) {
+                        hideScrollHint();
+                        modalBody.removeEventListener('scroll', scrollListener);
+                        scrollListener = null;
+                    }
+                };
+                modalBody.addEventListener('scroll', scrollListener, { passive: true });
+            }
+
+            function resetScrollHint() {
+                if (hideTimer) {
+                    clearTimeout(hideTimer);
+                    hideTimer = null;
+                }
+                if (scrollListener && modalBody) {
+                    modalBody.removeEventListener('scroll', scrollListener);
+                    scrollListener = null;
+                }
+                if (scrollHint) {
+                    scrollHint.classList.remove('is-visible', 'is-hiding');
+                    scrollHint.setAttribute('aria-hidden', 'true');
+                }
+                if (modalBody) {
+                    modalBody.scrollTop = 0;
+                }
+            }
+
+            if (modalEl) {
+                modalEl.addEventListener('shown.bs.modal', function () {
+                    window.setTimeout(showScrollHint, 350);
+                });
+                modalEl.addEventListener('hidden.bs.modal', resetScrollHint);
+            }
+
+            if (window.__AUTO_OPEN_MODAL__ !== 'rooms') return;
             if (!modalEl || !window.bootstrap?.Modal) return;
             const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
             setTimeout(() => modal.show(), 150);

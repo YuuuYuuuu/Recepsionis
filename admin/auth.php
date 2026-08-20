@@ -4,6 +4,10 @@
 
 require_once '../config.php';
 
+if (!function_exists('recepsionis_sync_staff_calls_to_visitors')) {
+    require_once dirname(__DIR__) . '/lib/visitor_sync.php';
+}
+
 // Cek apakah user sudah login
 if (!isset($_SESSION['user_id'])) {
     // Jika belum login, redirect ke halaman login

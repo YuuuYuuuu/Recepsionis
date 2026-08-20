@@ -37,21 +37,8 @@ if (!$chk || !$chk->num_rows) {
     exit;
 }
 $rowChk = $chk->fetch_assoc();
-$liveSid = $rowChk['live_session_id'] ?? null;
 $categoryId = isset($rowChk['category_id']) ? (int) $rowChk['category_id'] : 0;
 $assignedUserId = isset($rowChk['assigned_user_id']) ? (int) $rowChk['assigned_user_id'] : 0;
-if ($liveSid !== null && $liveSid !== '') {
-    ob_clean();
-    echo json_encode([
-        'success' => false,
-        'code' => 'use_live_chat',
-        'message' => 'Terima lewat halaman Live Chat agar tamu terhubung.',
-        'live_session_id' => $liveSid,
-        'staff_call_id' => (int)$call_id,
-    ], JSON_UNESCAPED_UNICODE);
-    ob_end_flush();
-    exit;
-}
 
 // Get user_id from session (if available, otherwise NULL)
 $user_id = isset($_SESSION['user_id']) ? intval($_SESSION['user_id']) : 0;

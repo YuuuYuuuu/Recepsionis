@@ -16,6 +16,8 @@ function staffCallEventLabel(string $eventType): string
         'reassigned' => 'Dipindahkan',
         'rejected' => 'Ditolak',
         'ended' => 'Sesi diakhiri',
+        'wa_confirmed' => 'Dikonfirmasi via WA',
+        'wa_queued' => 'Antrian via WA',
     ];
     return $labels[$eventType] ?? ucfirst(str_replace('_', ' ', $eventType));
 }
@@ -327,6 +329,14 @@ function staff_calls_page_url(int $page, string $statusFilter, string $viewFilte
                     Satu antrian untuk kategori Helpdesk: panggilan dari tamu dan tiket dari form QR kelas.
                 </p>
 
+                <?php if (isset($_GET['notice']) && $_GET['notice'] === 'live_chat_retired'): ?>
+                    <div class="alert alert-info alert-dismissible fade show">
+                        <i class="bi bi-info-circle"></i>
+                        Fitur Live Chat sudah dinonaktifkan. Gunakan antrian Helpdesk (panggilan & tiket QR) di halaman ini.
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                <?php endif; ?>
+
                 <?php if (isset($_GET['success'])): ?>
                     <div class="alert alert-success alert-dismissible fade show">
                         <i class="bi bi-check-circle"></i> 
@@ -579,6 +589,14 @@ function staff_calls_page_url(int $page, string $statusFilter, string $viewFilte
                                                     <span class="badge-status <?= $call['status'] ?>">
                                                         <?= ucfirst($call['status']) ?>
                                                     </span>
+                                                    <?php
+                                                    $callFollowUp = (string) ($call['follow_up_action'] ?? 'none');
+                                                    if ($callFollowUp !== '' && $callFollowUp !== 'none'):
+                                                    ?>
+                                                        <br><span class="badge <?= $callFollowUp === 'confirm' ? 'bg-success' : 'bg-secondary' ?> mt-1">
+                                                            <?= htmlspecialchars(recepsionis_follow_up_action_label($callFollowUp)) ?>
+                                                        </span>
+                                                    <?php endif; ?>
                                                     <?php if ($call['answered_by_name']): ?>
                                                         <br><small class="text-muted"><i class="bi bi-person-check"></i> <?= htmlspecialchars($call['answered_by_name']) ?></small>
                                                     <?php endif; ?>
@@ -719,6 +737,14 @@ function staff_calls_page_url(int $page, string $statusFilter, string $viewFilte
                                                 }
                                                 ?>
                                                 <span class="badge bg-<?= $badge ?>" data-ticket-badge="<?= (int) $t['id'] ?>"><?= htmlspecialchars($t['status']) ?></span>
+                                                <?php
+                                                $ticketFollowUp = (string) ($t['follow_up_action'] ?? 'none');
+                                                if ($ticketFollowUp !== '' && $ticketFollowUp !== 'none'):
+                                                ?>
+                                                    <br><span class="badge <?= $ticketFollowUp === 'confirm' ? 'bg-success' : 'bg-secondary' ?> mt-1">
+                                                        <?= htmlspecialchars(recepsionis_follow_up_action_label($ticketFollowUp)) ?>
+                                                    </span>
+                                                <?php endif; ?>
                                             </td>
                                             <td>
                                                 <select class="form-select form-select-sm ticket-status-select" data-ticket-id="<?= (int) $t['id'] ?>" data-prev-status="<?= htmlspecialchars($t['status'], ENT_QUOTES, 'UTF-8') ?>">
