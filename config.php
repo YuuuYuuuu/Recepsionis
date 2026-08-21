@@ -49,8 +49,10 @@ if (!defined('UPLOAD_URL')) {
 require_once 'koneksi.php';
 
 // Override produksi / VPS (tidak di-commit): salin config.local.example.php → config.local.php
-if (is_file(BASE_PATH . '/config.local.php')) {
+// koneksi.php mungkin sudah memuat file ini lebih awal (untuk DB_HOST, dll.)
+if (is_file(BASE_PATH . '/config.local.php') && !defined('RECEPSIONIS_CONFIG_LOCAL_LOADED')) {
     require_once BASE_PATH . '/config.local.php';
+    define('RECEPSIONIS_CONFIG_LOCAL_LOADED', true);
 }
 
 /**

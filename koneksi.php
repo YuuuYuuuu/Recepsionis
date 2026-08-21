@@ -1,28 +1,48 @@
 <?php
 // Koneksi Database untuk E-Recepsionis System
-$host = "localhost";
-$user = "root";
-$pass = "root";
-$dbname = "recepsionis_db";
+// Prioritas: konstanta di config.local.php → environment → default lokal (MAMP)
 
-$koneksi = new mysqli($host, $user, $pass, $dbname);
+$dbHost = defined('DB_HOST') ? (string) DB_HOST : (getenv('DB_HOST') ?: 'localhost');
+$dbUser = defined('DB_USER') ? (string) DB_USER : (getenv('DB_USER') ?: 'root');
+$dbPass = defined('DB_PASS') ? (string) DB_PASS : (getenv('DB_PASS') !== false ? (string) getenv('DB_PASS') : 'root');
+$dbName = defined('DB_NAME') ? (string) DB_NAME : (getenv('DB_NAME') ?: 'recepsionis_db');
 
-// Set charset UTF-8
-$koneksi->set_charset("utf8mb4");
-
-// Cek koneksi
-if ($koneksi->connect_error) {
-    die("Koneksi gagal: " . $koneksi->connect_error);
+// Catatan: config.local.php di-load dari config.php SETELAH koneksi.php.
+// Agar override DB berfungsi di hosting, load config.local lebih awal di sini jika ada.
+$configLocalEarly = dirname(__FILE__) . '/config.local.php';
+if (is_file($configLocalEarly) && !defined('RECEPSIONIS_CONFIG_LOCAL_LOADED')) {
+    require_once $configLocalEarly;
+    if (!defined('RECEPSIONIS_CONFIG_LOCAL_LOADED')) {
+        define('RECEPSIONIS_CONFIG_LOCAL_LOADED', true);
+    }
+    $dbHost = defined('DB_HOST') ? (string) DB_HOST : $dbHost;
+    $dbUser = defined('DB_USER') ? (string) DB_USER : $dbUser;
+    $dbPass = defined('DB_PASS') ? (string) DB_PASS : $dbPass;
+    $dbName = defined('DB_NAME') ? (string) DB_NAME : $dbName;
 }
 
-// Fungsi helper untuk escape string
-function esc($string) {
+$host = $dbHost;
+$user = $dbUser;
+$pass = $dbPass;
+$dbname = $dbName;
+
+$koneksi = @new mysqli($host, $user, $pass, $dbname);
+
+if ($koneksi->connect_error) {
+    http_response_code(503);
+    die('Koneksi database gagal. Periksa config.local.php atau kredensial MySQL.');
+}
+
+$koneksi->set_charset('utf8mb4');
+
+function esc($string)
+{
     global $koneksi;
     return $koneksi->real_escape_string($string);
 }
 
-// Fungsi untuk mendapatkan hari ini dalam bahasa Indonesia
-function getHariIni() {
+function getHariIni()
+{
     $hari_en = date('l');
     $hari_id = [
         'Monday' => 'Senin',
@@ -31,27 +51,27 @@ function getHariIni() {
         'Thursday' => 'Kamis',
         'Friday' => 'Jumat',
         'Saturday' => 'Sabtu',
-        'Sunday' => 'Minggu'
+        'Sunday' => 'Minggu',
     ];
     return $hari_id[$hari_en];
 }
 
-// Fungsi untuk format tanggal Indonesia
-function formatTanggal($date) {
+function formatTanggal($date)
+{
     $hari = getHariIni();
     $tanggal = date('d', strtotime($date));
     $bulan = [
         '01' => 'Januari', '02' => 'Februari', '03' => 'Maret',
         '04' => 'April', '05' => 'Mei', '06' => 'Juni',
         '07' => 'Juli', '08' => 'Agustus', '09' => 'September',
-        '10' => 'Oktober', '11' => 'November', '12' => 'Desember'
+        '10' => 'Oktober', '11' => 'November', '12' => 'Desember',
     ];
     $bulan_str = $bulan[date('m', strtotime($date))];
     $tahun = date('Y', strtotime($date));
     return "$hari, $tanggal $bulan_str $tahun";
 }
 
-// Fungsi untuk format waktu
-function formatWaktu($time) {
+function formatWaktu($time)
+{
     return date('H:i', strtotime($time));
 }

@@ -27,6 +27,10 @@ Sistem manajemen kunjungan tamu digital dengan fitur lengkap: check-in/out, appo
 5. **Notification**: Notifikasi email dan in-app
 6. **Real-time Updates**: Update real-time untuk antrian
 
+## Deploy ke hosting
+
+Lihat **[DEPLOY.md](DEPLOY.md)** — checklist produksi, `config.local.php`, dan penjelasan mengapa **Vercel tidak cocok** untuk app PHP+MySQL penuh ini.
+
 ## Instalasi
 
 ### 1. Requirements
@@ -49,13 +53,9 @@ Atau via phpMyAdmin:
 
 ### 3. Konfigurasi
 
-Edit file `koneksi.php`:
-```php
-$host = "localhost";
-$user = "root";
-$pass = "root";  // Sesuaikan password MySQL
-$dbname = "recepsionis_db";
-```
+**Lokal (MAMP):** default di `koneksi.php` (`root` / `root` / `recepsionis_db`).
+
+**Hosting:** salin `config.local.example.php` → `config.local.php`, lalu isi `DB_*` dan `PUBLIC_BASE_URL` (jangan di-commit).
 
 Untuk **live chat**, set URL server Node di `config.php` (konstanta `LIVE_SOCKET_URL`, default `http://127.0.0.1:3001`). **Samakan skema database** (idempoten, aman diulang):
 

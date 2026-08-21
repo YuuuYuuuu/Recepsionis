@@ -6,3 +6,10 @@ maintenance_message.txt
 .DS_Store
 .cursor/
 E-Resepsionis/
+node_modules/
+visitor-app/node_modules/
+realtime-server/node_modules/
+*.log
+.env
+.env.*
+!.env.example
