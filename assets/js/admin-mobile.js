@@ -6,6 +6,17 @@
     var backdrop = document.getElementById('adminSidebarBackdrop');
     var sidebar = document.getElementById('adminSidebar');
 
+    document.querySelectorAll('[data-nav-accordion]').forEach(function (group) {
+        var btn = group.querySelector('.nav-group-toggle');
+        if (!btn) {
+            return;
+        }
+        btn.addEventListener('click', function () {
+            var open = group.classList.toggle('is-open');
+            btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        });
+    });
+
     if (!sidebar || !toggle) {
         return;
     }
@@ -36,7 +47,7 @@
         backdrop.addEventListener('click', closeSidebar);
     }
 
-    sidebar.querySelectorAll('.nav-link').forEach(function (link) {
+    sidebar.querySelectorAll('a.nav-link').forEach(function (link) {
         link.addEventListener('click', function () {
             if (window.matchMedia('(max-width: 991.98px)').matches) {
                 closeSidebar();

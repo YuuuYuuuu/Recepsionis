@@ -574,68 +574,6 @@
         return notification;
     }
 
-    function createHelpdeskTicketPopup(ticket) {
-        const notification = document.createElement('div');
-        notification.className = 'staff-call-notification scn-helpdesk-ticket';
-        notification.dataset.ticketId = ticket.id;
-        notification.dataset.notificationType = 'helpdesk_it';
-
-        const name = escapeHtml(ticket.nama || 'Pelapor');
-        const nomor = escapeHtml(ticket.nomor || '-');
-        const kelas = escapeHtml(ticket.kelas || '-');
-        const kendala = escapeHtml(ticket.kendala || '-');
-        const initials = escapeHtml(visitorInitials(ticket.nama));
-
-        notification.innerHTML = ''
-            + '<div class="scn-card">'
-            + '  <div class="scn-header scn-header--helpdesk">'
-            + '    <div class="scn-header-icon" aria-hidden="true"><i class="bi bi-headset"></i></div>'
-            + '    <div class="scn-header-text">'
-            + '      <div class="scn-title-row">'
-            + '        <span class="scn-pulse-dot" aria-hidden="true"></span>'
-            + '        <span class="scn-title">Tiket Helpdesk IT</span>'
-            + '      </div>'
-            + '      <span class="scn-subtitle">Laporan dari form QR kelas</span>'
-            + '    </div>'
-            + '    <button type="button" class="scn-close" onclick="dismissHelpdeskTicketNotification(' + ticket.id + ')" aria-label="Tutup">'
-            + '      <i class="bi bi-x-lg"></i>'
-            + '    </button>'
-            + '  </div>'
-            + '  <div class="scn-body">'
-            + '    <div class="scn-visitor">'
-            + '      <div class="scn-avatar scn-avatar--helpdesk">' + initials + '</div>'
-            + '      <div class="scn-visitor-info">'
-            + '        <div class="scn-name">' + name + '</div>'
-            + '        <div class="scn-category"><i class="bi bi-ticket-detailed-fill"></i> Helpdesk IT</div>'
-            + '      </div>'
-            + '    </div>'
-            + '    <div class="scn-details">'
-            + '      <div class="scn-detail">'
-            + '        <span class="scn-detail-label"><i class="bi bi-telephone-fill"></i> Nomor</span>'
-            + '        <span class="scn-detail-value">' + nomor + '</span>'
-            + '      </div>'
-            + '      <div class="scn-detail">'
-            + '        <span class="scn-detail-label"><i class="bi bi-mortarboard-fill"></i> Kelas</span>'
-            + '        <span class="scn-detail-value">' + kelas + '</span>'
-            + '      </div>'
-            + '      <div class="scn-detail scn-detail--message">'
-            + '        <span class="scn-detail-label"><i class="bi bi-chat-left-text-fill"></i> Kendala</span>'
-            + '        <span class="scn-detail-value">' + kendala + '</span>'
-            + '      </div>'
-            + '    </div>'
-            + '    <div class="scn-actions">'
-            + '      <button type="button" class="scn-btn scn-btn--accept" onclick="openHelpdeskTicketFromNotification(' + ticket.id + ')">'
-            + '        <i class="bi bi-box-arrow-up-right"></i> Buka tiket'
-            + '      </button>'
-            + '      <button type="button" class="scn-btn scn-btn--mute" onclick="dismissHelpdeskTicketNotification(' + ticket.id + ')">'
-            + '        <i class="bi bi-volume-mute-fill"></i> Hentikan suara'
-            + '      </button>'
-            + '    </div>'
-            + '  </div>'
-            + '</div>';
-        return notification;
-    }
-
     function showHelpdeskNotification(ticket) {
         const ticketId = Number(ticket.id);
         if (!notificationsEnabled || ticketId <= 0) {
@@ -650,20 +588,14 @@
         }
 
         knownTicketIds.add(ticketId);
-        const container = ensureNotificationContainer();
-        const notification = createHelpdeskTicketPopup(ticket);
-        container.appendChild(notification);
+
+        // Popup helpdesk lama dihapus — notifikasi tiket hanya lewat card di dashboard.
+        if (isOnHelpdeskDashboard()) {
+            return;
+        }
 
         triggerSoundInSyncWithPaint();
         startSoundLoopForActiveItems();
-
-        setTimeout(function() {
-            if (notification.parentNode) {
-                notification.remove();
-                knownTicketIds.delete(ticketId);
-                stopNotificationSound();
-            }
-        }, 30000);
     }
 
     function dismissHelpdeskTicket(ticketId) {
@@ -693,17 +625,28 @@
     }
 
     function helpdeskTicketsPageUrl() {
-        return adminBaseUrl() + 'staff_calls.php?channel=tickets&status=pending';
+        return adminBaseUrl() + 'helpdesk_dashboard.php?section=tickets&channel=tickets&status=pending';
     }
 
     function isOnHelpdeskTicketsPage() {
         try {
             const path = window.location.pathname || '';
-            if (path.indexOf('staff_calls.php') === -1) {
+            const params = new URLSearchParams(window.location.search || '');
+            return path.indexOf('helpdesk_dashboard.php') !== -1
+                && (params.get('section') === 'tickets' || !params.get('section') || params.get('status') || params.get('channel') === 'tickets');
+        } catch (_) {
+            return false;
+        }
+    }
+
+    function isOnHelpdeskDashboard() {
+        try {
+            const path = window.location.pathname || '';
+            if (path.indexOf('helpdesk_dashboard.php') === -1) {
                 return false;
             }
             const params = new URLSearchParams(window.location.search || '');
-            return params.get('channel') === 'tickets';
+            return params.get('section') === 'dashboard';
         } catch (_) {
             return false;
         }
@@ -787,6 +730,10 @@
 
     function checkHelpdeskTickets() {
         if (!notificationsEnabled) {
+            return;
+        }
+
+        if (isOnHelpdeskDashboard()) {
             return;
         }
 
@@ -886,6 +833,19 @@
         badge.textContent = formatActionCount(count);
     }
 
+    function actionCountForBadgeKey(key, total, calls, tickets) {
+        if (key === 'total' || key === 'pending') {
+            return total;
+        }
+        if (key === 'calls') {
+            return calls;
+        }
+        if (key === 'tickets') {
+            return tickets;
+        }
+        return 0;
+    }
+
     function updateHelpdeskActionBadges(counts) {
         if (!counts) {
             return;
@@ -894,15 +854,39 @@
         const total = parseInt(counts.total, 10) || 0;
         const calls = parseInt(counts.calls, 10) || 0;
         const tickets = parseInt(counts.tickets, 10) || 0;
+        const navBadgeClass = 'badge bg-danger rounded-pill notification-badge helpdesk-action-badge';
 
-        const sidebarLink = document.querySelector('a.nav-link[data-helpdesk-nav="sidebar"], a.nav-link[href*="staff_calls.php"]');
-        upsertHelpdeskBadge(
-            sidebarLink,
-            '.helpdesk-action-badge',
-            total,
-            'badge bg-danger rounded-pill notification-badge helpdesk-action-badge',
-            'total'
-        );
+        // E-Recepsionis: Daftar Panggilan hanya menghitung staff_calls (bukan tiket Helpdesk)
+        document.querySelectorAll('a.nav-link[href*="staff_calls.php"]').forEach(function(link) {
+            upsertHelpdeskBadge(link, '.helpdesk-action-badge', calls, navBadgeClass, 'calls');
+        });
+
+        // Helpdesk: Daftar Laporan / Tiket QR hanya menghitung tiket
+        document.querySelectorAll(
+            'a.nav-link[data-helpdesk-nav="sidebar"], a.nav-link[href*="section=tickets"]:not([href*="staff_calls.php"]), a.hd-nav-link[href*="section=tickets"]'
+        ).forEach(function(link) {
+            upsertHelpdeskBadge(link, '.helpdesk-action-badge', tickets, navBadgeClass, 'tickets');
+        });
+
+        document.querySelectorAll('.nav-group-toggle-label').forEach(function(label) {
+            if (!label.querySelector('.bi-ticket-detailed, .helpdesk-action-badge[data-helpdesk-badge="tickets"]')) {
+                return;
+            }
+            upsertHelpdeskBadge(label, '.helpdesk-action-badge', tickets, navBadgeClass, 'tickets');
+        });
+
+        document.querySelectorAll('.helpdesk-action-badge[data-helpdesk-badge]').forEach(function(el) {
+            const key = el.getAttribute('data-helpdesk-badge');
+            if (!key) {
+                return;
+            }
+            const value = actionCountForBadgeKey(key, total, calls, tickets);
+            if (value <= 0) {
+                el.remove();
+                return;
+            }
+            el.textContent = formatActionCount(value);
+        });
 
         document.querySelectorAll('[data-helpdesk-badge]').forEach(function(el) {
             const key = el.getAttribute('data-helpdesk-badge');
@@ -910,16 +894,7 @@
                 return;
             }
 
-            let value = 0;
-            if (key === 'total' || key === 'pending') {
-                value = total;
-            } else if (key === 'calls') {
-                value = calls;
-            } else if (key === 'tickets') {
-                value = tickets;
-            }
-
-            updateSegmentBadge(el, value);
+            updateSegmentBadge(el, actionCountForBadgeKey(key, total, calls, tickets));
         });
 
         const heroBadge = document.querySelector('.pic-dash-hero-badge[data-helpdesk-badge="total"]');
@@ -983,9 +958,7 @@
 
     window.openHelpdeskTicketFromNotification = function(ticketId) {
         dismissHelpdeskTicket(ticketId);
-        if (!isOnHelpdeskTicketsPage()) {
-            window.location.href = helpdeskTicketsPageUrl();
-        }
+        window.location.href = helpdeskTicketsPageUrl();
     };
 
     window.acceptLiveChatFromNotification = function(callId, button) {
@@ -1028,6 +1001,9 @@
 
     function init() {
         removeLegacyToolbar();
+        document.querySelectorAll('.staff-call-notification.scn-helpdesk-ticket, .staff-call-notification[data-notification-type="helpdesk_it"]').forEach(function(node) {
+            node.remove();
+        });
         initAudio();
         loadPreferences().then(function() {
             enableAudioAndMaybeRing();
@@ -1047,6 +1023,16 @@
     window.recepsionisStaffCallNotify = {
         applyPreferences: applyPreferences,
         unlockAudio: enableAudioAndMaybeRing,
+        ringHelpdesk: function() {
+            if (!notificationsEnabled || !soundEnabled) {
+                return;
+            }
+            triggerSoundInSyncWithPaint();
+            startSoundLoopForActiveItems();
+        },
+        stopRing: function() {
+            stopNotificationSound();
+        },
         testSound: function() {
             audioEnabled = true;
             playFallbackTone();

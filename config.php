@@ -79,6 +79,11 @@ if (!function_exists('recepsionis_get_public_base_url')) {
             }
         }
 
+        // Prefer host dari request saat ini (MAMP :8888, LAN IP, dll.) jika settings kosong.
+        if ($url === '' && PHP_SAPI !== 'cli' && !empty($_SERVER['HTTP_HOST'])) {
+            $url = recepsionis_detect_base_url();
+        }
+
         if ($url === '') {
             $url = defined('BASE_URL') ? (string) BASE_URL : recepsionis_detect_base_url();
         }
@@ -90,11 +95,17 @@ if (!function_exists('recepsionis_get_public_base_url')) {
         }
 
         $host = strtolower((string) ($parsed['host'] ?? ''));
-        $isLocal = in_array($host, ['localhost', '127.0.0.1', '::1'], true)
-            || str_starts_with($host, '192.168.')
-            || str_starts_with($host, '10.');
+        $isLoopback = in_array($host, ['localhost', '127.0.0.1', '::1'], true);
+        $isPrivateLan = str_starts_with($host, '192.168.')
+            || str_starts_with($host, '10.')
+            || (bool) preg_match('/^172\.(1[6-9]|2[0-9]|3[0-1])\./', $host);
+        $isLocal = $isLoopback || $isPrivateLan;
 
         if ($isLocal) {
+            // Hindari "localhost" — Chrome sering paksa HTTPS (ERR_SSL_PROTOCOL_ERROR / HSTS).
+            if ($host === 'localhost' || $host === '::1') {
+                $host = '127.0.0.1';
+            }
             $scheme = 'http';
             $port = isset($parsed['port']) ? ':' . (int) $parsed['port'] : '';
             $path = (string) ($parsed['path'] ?? '/');
@@ -102,7 +113,7 @@ if (!function_exists('recepsionis_get_public_base_url')) {
                 $path = '/';
             }
 
-            return $scheme . '://' . ($parsed['host'] ?? 'localhost') . $port . $path;
+            return $scheme . '://' . $host . $port . $path;
         }
 
         return $url;
@@ -304,5 +315,32 @@ function generateQueueNumber($host_id) {
     return QUEUE_PREFIX . str_pad($count, 3, '0', STR_PAD_LEFT);
 }
 
+/** Safe UTF-8 substr when php-mbstring is missing (common on some VPS). */
+if (!function_exists('recepsionis_substr')) {
+    function recepsionis_substr(string $string, int $start, ?int $length = null): string
+    {
+        if (function_exists('mb_substr')) {
+            return $length === null
+                ? (string) mb_substr($string, $start, null, 'UTF-8')
+                : (string) mb_substr($string, $start, $length, 'UTF-8');
+        }
+        if ($length === null) {
+            return (string) substr($string, $start);
+        }
+        return (string) substr($string, $start, $length);
+    }
+}
+
+if (!function_exists('recepsionis_strtoupper')) {
+    function recepsionis_strtoupper(string $string): string
+    {
+        if (function_exists('mb_strtoupper')) {
+            return (string) mb_strtoupper($string, 'UTF-8');
+        }
+        return strtoupper($string);
+    }
+}
+
 require_once BASE_PATH . '/lib/visitor_sync.php';
+require_once BASE_PATH . '/lib/branding.php';
 require_once BASE_PATH . '/lib/tv_info.php';

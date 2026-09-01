@@ -349,10 +349,16 @@ SQL;
         }
 
         // Unique per ruangan (1 denah = 1 ruangan)
-        runAlter($koneksi, 'ALTER TABLE `floor_plans` ADD UNIQUE KEY `uq_floor_plans_room_id` (`room_id`)');
+        if (!indexExists($koneksi, $schema, 'floor_plans', 'uq_floor_plans_room_id')) {
+            runAlter($koneksi, 'ALTER TABLE `floor_plans` ADD UNIQUE KEY `uq_floor_plans_room_id` (`room_id`)');
+        }
         // Unique gedung+lantai lama diganti indeks biasa agar banyak denah per lantai boleh
-        runAlter($koneksi, 'ALTER TABLE `floor_plans` DROP INDEX `uq_floor_plans_gedung_lantai`');
-        runAlter($koneksi, 'ALTER TABLE `floor_plans` ADD INDEX `idx_floor_plans_gedung_lantai` (`gedung`, `lantai`)');
+        if (indexExists($koneksi, $schema, 'floor_plans', 'uq_floor_plans_gedung_lantai')) {
+            runAlter($koneksi, 'ALTER TABLE `floor_plans` DROP INDEX `uq_floor_plans_gedung_lantai`');
+        }
+        if (!indexExists($koneksi, $schema, 'floor_plans', 'idx_floor_plans_gedung_lantai')) {
+            runAlter($koneksi, 'ALTER TABLE `floor_plans` ADD INDEX `idx_floor_plans_gedung_lantai` (`gedung`, `lantai`)');
+        }
         out('[OK] floor_plans indeks room_id / gedung+lantai diselaraskan');
     }
 
@@ -384,7 +390,8 @@ SQL;
             }
         }
 
-        if (columnExists($koneksi, $schema, 'rooms', 'tv_display_token')) {
+        if (columnExists($koneksi, $schema, 'rooms', 'tv_display_token')
+            && !indexExists($koneksi, $schema, 'rooms', 'uq_rooms_tv_display_token')) {
             runAlter($koneksi, 'ALTER TABLE `rooms` ADD UNIQUE KEY `uq_rooms_tv_display_token` (`tv_display_token`)');
             $missing = $koneksi->query(
                 "SELECT id FROM rooms WHERE tv_display_token IS NULL OR tv_display_token = ''"
@@ -406,6 +413,15 @@ SQL;
             }
             out("[OK] rooms.tv_display_token di-seed untuk {$seeded} ruangan");
         }
+
+        if (columnExists($koneksi, $schema, 'rooms', 'kode_ruangan')) {
+            runAlter(
+                $koneksi,
+                'ALTER TABLE `rooms` MODIFY COLUMN `kode_ruangan` VARCHAR(100) NULL DEFAULT NULL'
+            );
+            $koneksi->query("UPDATE `rooms` SET `kode_ruangan` = NULL WHERE `kode_ruangan` = ''");
+            out('[OK] rooms.kode_ruangan boleh dikosongkan (NULL)');
+        }
     } else {
         out('[SKIP] Tabel rooms tidak ada, lewati kolom denah_pin / TV info');
     }
@@ -418,6 +434,24 @@ SQL;
         } else {
             out('[OK] users.no_wa sudah ada');
         }
+
+        // Role helpdesk_admin untuk pemisahan modul Helpdesk
+        runAlter(
+            $koneksi,
+            "ALTER TABLE `users` MODIFY COLUMN `role` ENUM('admin','helpdesk_admin','operator') NOT NULL DEFAULT 'operator'"
+        );
+        out('[OK] users.role mendukung helpdesk_admin');
+
+        // Status tugas (on duty) — terima tiket/panggilan tanpa menonaktifkan akun
+        if (!columnExists($koneksi, $schema, 'users', 'status_tugas')) {
+            runAlter(
+                $koneksi,
+                'ALTER TABLE `users` ADD COLUMN `status_tugas` TINYINT(1) NOT NULL DEFAULT 1 AFTER `status_aktif`'
+            );
+            out('[OK] users.status_tugas ditambahkan');
+        } else {
+            out('[OK] users.status_tugas sudah ada');
+        }
     }
 
     // --- helpdesk_it_tickets ---
@@ -428,7 +462,7 @@ CREATE TABLE IF NOT EXISTS `helpdesk_it_tickets` (
     `nomor` VARCHAR(50) NOT NULL,
     `kelas` VARCHAR(150) NOT NULL,
     `kendala` TEXT NOT NULL,
-    `status` ENUM('pending','in_progress','resolved') NOT NULL DEFAULT 'pending',
+    `status` ENUM('pending','in_progress','resolved','expired') NOT NULL DEFAULT 'pending',
     `assigned_user_id` INT NULL DEFAULT NULL,
     `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -453,6 +487,7 @@ SQL;
             'follow_up_action' => "ADD COLUMN `follow_up_action` ENUM('none','wait','confirm') NOT NULL DEFAULT 'none' AFTER `status`",
             'follow_up_at' => 'ADD COLUMN `follow_up_at` TIMESTAMP NULL DEFAULT NULL AFTER `follow_up_action`',
             'follow_up_by' => 'ADD COLUMN `follow_up_by` INT NULL DEFAULT NULL AFTER `follow_up_at`',
+            'responded_at' => 'ADD COLUMN `responded_at` TIMESTAMP NULL DEFAULT NULL AFTER `follow_up_by`',
         ];
         foreach ($ticketFollowUpCols as $col => $fragment) {
             if (!columnExists($koneksi, $schema, 'helpdesk_it_tickets', $col)) {
@@ -461,6 +496,73 @@ SQL;
             } else {
                 out("[OK] helpdesk_it_tickets.{$col} sudah ada");
             }
+        }
+
+        if (columnExists($koneksi, $schema, 'helpdesk_it_tickets', 'responded_at')) {
+            $koneksi->query(
+                "UPDATE helpdesk_it_tickets
+                 SET responded_at = COALESCE(follow_up_at, updated_at)
+                 WHERE responded_at IS NULL
+                   AND status IN ('in_progress', 'resolved')"
+            );
+            out('[OK] helpdesk_it_tickets.responded_at backfill dari data lama');
+        }
+
+        $ticketModeCols = [
+            'access_type' => "ADD COLUMN `access_type` ENUM('event','room') NOT NULL DEFAULT 'event' AFTER `kendala`",
+            'room_id' => 'ADD COLUMN `room_id` INT NULL DEFAULT NULL AFTER `access_type`',
+            'issue_category' => "ADD COLUMN `issue_category` ENUM('audio','video','device','other') NOT NULL DEFAULT 'other' AFTER `room_id`",
+        ];
+        foreach ($ticketModeCols as $col => $fragment) {
+            if (!columnExists($koneksi, $schema, 'helpdesk_it_tickets', $col)) {
+                runAlter($koneksi, 'ALTER TABLE `helpdesk_it_tickets` ' . $fragment);
+                out("[OK] helpdesk_it_tickets.{$col} ditambahkan");
+            } else {
+                out("[OK] helpdesk_it_tickets.{$col} sudah ada");
+            }
+        }
+
+        if (columnExists($koneksi, $schema, 'helpdesk_it_tickets', 'access_type')) {
+            $koneksi->query("UPDATE helpdesk_it_tickets SET access_type = 'event' WHERE access_type IS NULL OR access_type = ''");
+            $koneksi->query("UPDATE helpdesk_it_tickets SET issue_category = 'other' WHERE issue_category IS NULL OR issue_category = ''");
+            out('[OK] helpdesk_it_tickets data lama di-backfill');
+        }
+
+        // Pastikan ENUM status mencakup expired
+        $statusCol = $koneksi->query(
+            "SELECT COLUMN_TYPE FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = '" . $koneksi->real_escape_string($schema) . "'
+               AND TABLE_NAME = 'helpdesk_it_tickets'
+               AND COLUMN_NAME = 'status'
+             LIMIT 1"
+        );
+        if ($statusCol && ($statusRow = $statusCol->fetch_assoc())) {
+            $colType = strtolower((string) ($statusRow['COLUMN_TYPE'] ?? ''));
+            if (strpos($colType, "'expired'") === false) {
+                runAlter(
+                    $koneksi,
+                    "ALTER TABLE `helpdesk_it_tickets`
+                     MODIFY COLUMN `status` ENUM('pending','in_progress','resolved','expired') NOT NULL DEFAULT 'pending'"
+                );
+                out('[OK] helpdesk_it_tickets.status ENUM +expired');
+            } else {
+                out('[OK] helpdesk_it_tickets.status sudah termasuk expired');
+            }
+        }
+
+        // Expire tiket pending > 24 jam yang belum ditanggapi
+        if (function_exists('recepsionis_expire_stale_helpdesk_tickets')) {
+            // no-op di migrasi CLI tanpa staff_call_routing; lakukan SQL langsung
+        }
+        $expireSql = "UPDATE helpdesk_it_tickets
+                      SET status = 'expired', updated_at = NOW()
+                      WHERE status = 'pending'
+                        AND created_at < (NOW() - INTERVAL 24 HOUR)";
+        if (columnExists($koneksi, $schema, 'helpdesk_it_tickets', 'responded_at')) {
+            $expireSql .= ' AND responded_at IS NULL';
+        }
+        if ($koneksi->query($expireSql)) {
+            out('[OK] helpdesk_it_tickets expired stale (>24 jam): ' . (int) $koneksi->affected_rows);
         }
     }
 
@@ -528,14 +630,80 @@ SQL;
     }
     out('[OK] Tabel helpdesk_it_access (create if not exists)');
 
+    if (tableExists($koneksi, $schema, 'helpdesk_it_access')) {
+        $accessCols = [
+            'access_type' => "ADD COLUMN `access_type` ENUM('event','room') NOT NULL DEFAULT 'event' AFTER `public_token`",
+            'room_id' => 'ADD COLUMN `room_id` INT NULL DEFAULT NULL AFTER `access_type`',
+        ];
+        foreach ($accessCols as $col => $fragment) {
+            if (!columnExists($koneksi, $schema, 'helpdesk_it_access', $col)) {
+                runAlter($koneksi, 'ALTER TABLE `helpdesk_it_access` ' . $fragment);
+                out("[OK] helpdesk_it_access.{$col} ditambahkan");
+            } else {
+                out("[OK] helpdesk_it_access.{$col} sudah ada");
+            }
+        }
+
+        if (columnExists($koneksi, $schema, 'helpdesk_it_access', 'access_type')) {
+            $koneksi->query("UPDATE helpdesk_it_access SET access_type = 'event' WHERE access_type IS NULL OR access_type = '' OR (room_id IS NULL AND access_type = 'room')");
+            out('[OK] helpdesk_it_access access_type di-backfill');
+        }
+    }
+
     $cntAccess = $koneksi->query('SELECT COUNT(*) AS c FROM helpdesk_it_access');
     $accessCount = $cntAccess ? (int) $cntAccess->fetch_assoc()['c'] : 0;
-    if ($accessCount === 0) {
+    $hasEventAccess = false;
+    if (tableExists($koneksi, $schema, 'helpdesk_it_access') && columnExists($koneksi, $schema, 'helpdesk_it_access', 'access_type')) {
+        $eventCheck = $koneksi->query("SELECT id FROM helpdesk_it_access WHERE access_type = 'event' AND status_aktif = 1 LIMIT 1");
+        $hasEventAccess = $eventCheck && $eventCheck->num_rows > 0;
+    }
+
+    if ($accessCount === 0 || !$hasEventAccess) {
         $token = bin2hex(random_bytes(16));
-        $koneksi->query("INSERT INTO helpdesk_it_access (public_token, status_aktif) VALUES ('" . $koneksi->real_escape_string($token) . "', 1)");
-        out('[OK] Seed helpdesk_it_access (token awal)');
+        if (columnExists($koneksi, $schema, 'helpdesk_it_access', 'access_type')) {
+            $koneksi->query("UPDATE helpdesk_it_access SET status_aktif = 0 WHERE access_type = 'event'");
+            $koneksi->query("INSERT INTO helpdesk_it_access (public_token, access_type, room_id, status_aktif) VALUES ('" . $koneksi->real_escape_string($token) . "', 'event', NULL, 1)");
+        } else {
+            $koneksi->query("INSERT INTO helpdesk_it_access (public_token, status_aktif) VALUES ('" . $koneksi->real_escape_string($token) . "', 1)");
+        }
+        out('[OK] Seed helpdesk_it_access token event');
     } else {
-        out('[OK] helpdesk_it_access sudah berisi, skip seed');
+        $emptyTok = $koneksi->query("SELECT id FROM helpdesk_it_access WHERE access_type = 'event' AND status_aktif = 1 AND (public_token IS NULL OR public_token = '') LIMIT 1");
+        if ($emptyTok && $emptyTok->num_rows > 0) {
+            $token = bin2hex(random_bytes(16));
+            $koneksi->query("UPDATE helpdesk_it_access SET public_token = '" . $koneksi->real_escape_string($token) . "', updated_at = CURRENT_TIMESTAMP WHERE access_type = 'event' AND status_aktif = 1 AND (public_token IS NULL OR public_token = '')");
+            out('[OK] helpdesk_it_access token event kosong diisi ulang');
+        } else {
+            out('[OK] helpdesk_it_access token event sudah ada');
+        }
+    }
+
+    if (tableExists($koneksi, $schema, 'rooms') && tableExists($koneksi, $schema, 'helpdesk_it_access') && columnExists($koneksi, $schema, 'helpdesk_it_access', 'room_id')) {
+        $rooms = $koneksi->query('SELECT id FROM rooms WHERE status_aktif = 1');
+        $activeRoomIds = [];
+        if ($rooms) {
+            while ($room = $rooms->fetch_assoc()) {
+                $roomId = (int) ($room['id'] ?? 0);
+                if ($roomId <= 0) {
+                    continue;
+                }
+                $activeRoomIds[] = $roomId;
+                $existing = $koneksi->query('SELECT id FROM helpdesk_it_access WHERE access_type = \'room\' AND room_id = ' . $roomId . ' AND status_aktif = 1 LIMIT 1');
+                if ($existing && $existing->num_rows > 0) {
+                    continue;
+                }
+                $koneksi->query('UPDATE helpdesk_it_access SET status_aktif = 0 WHERE access_type = \'room\' AND room_id = ' . $roomId);
+                $roomToken = bin2hex(random_bytes(16));
+                $koneksi->query("INSERT INTO helpdesk_it_access (public_token, access_type, room_id, status_aktif) VALUES ('" . $koneksi->real_escape_string($roomToken) . "', 'room', " . $roomId . ', 1)');
+            }
+        }
+        if (!empty($activeRoomIds)) {
+            $idList = implode(',', array_map('intval', $activeRoomIds));
+            $koneksi->query("UPDATE helpdesk_it_access SET status_aktif = 0 WHERE access_type = 'room' AND room_id IS NOT NULL AND room_id NOT IN ({$idList})");
+        } else {
+            $koneksi->query("UPDATE helpdesk_it_access SET status_aktif = 0 WHERE access_type = 'room'");
+        }
+        out('[OK] helpdesk_it_access token per ruangan disinkronkan');
     }
 
     if (tableExists($koneksi, $schema, 'settings')) {
@@ -544,6 +712,33 @@ SQL;
             $catId = (int) $hdCat->fetch_assoc()['id'];
             $koneksi->query("INSERT INTO settings (setting_key, setting_value) VALUES ('helpdesk_it_category_id', '" . $catId . "') ON DUPLICATE KEY UPDATE setting_value = IF(setting_value = '' OR setting_value IS NULL, VALUES(setting_value), setting_value)");
             out('[OK] settings.helpdesk_it_category_id');
+        }
+
+        $waDefaults = [
+            'wa_session_id' => '',
+        ];
+        foreach ($waDefaults as $waKey => $waValue) {
+            $koneksi->query("INSERT INTO settings (setting_key, setting_value) VALUES ('" . $koneksi->real_escape_string($waKey) . "', '" . $koneksi->real_escape_string($waValue) . "') ON DUPLICATE KEY UPDATE setting_key = setting_key");
+            out('[OK] settings.' . $waKey);
+        }
+
+        $brandingDefaults = [
+            'visitor_logo' => '',
+            'visitor_logo_alt' => '',
+            'visitor_welcome_title' => 'Selamat Datang',
+            'visitor_service_rooms_title' => 'Daftar Ruangan',
+            'visitor_service_rooms_desc' => 'Cari ruangan, gedung, dan lokasi di kampus.',
+            'visitor_service_rooms_cta' => 'Lihat ruangan',
+            'visitor_service_prodi_title' => 'Program Studi',
+            'visitor_service_prodi_desc' => 'Jelajahi program studi yang ada di kampus.',
+            'visitor_service_prodi_cta' => 'Lihat prodi',
+            'visitor_service_staff_title' => 'Panggil Staff',
+            'visitor_service_staff_desc' => 'Hubungi operator, notifikasi langsung ke tim.',
+            'visitor_service_staff_cta' => 'Panggil sekarang',
+        ];
+        foreach ($brandingDefaults as $brandKey => $brandValue) {
+            $koneksi->query("INSERT INTO settings (setting_key, setting_value) VALUES ('" . $koneksi->real_escape_string($brandKey) . "', '" . $koneksi->real_escape_string($brandValue) . "') ON DUPLICATE KEY UPDATE setting_key = setting_key");
+            out('[OK] settings.' . $brandKey);
         }
     }
 

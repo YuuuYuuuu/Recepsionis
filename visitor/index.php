@@ -23,16 +23,26 @@ $landing_asset_ver = max(
 // Get rooms
 $rooms = $koneksi->query("SELECT * FROM rooms WHERE status_aktif = 1 ORDER BY gedung, lantai, nama_ruangan");
 
+$branding = recepsionis_get_visitor_branding($koneksi);
+$visitor_logo_url = $scheme . '://' . $http_host . $api_base . '/' . ltrim((string) $branding['logo_relative'], '/');
+$siteName = (string) $branding['site_name'];
+$welcomeTitle = (string) $branding['welcome_title'];
+$logoAlt = (string) $branding['logo_alt'];
+$visitorServices = $branding['services'];
+
 ?>
 <!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Selamat Datang - E-Recepsionis System</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#030712">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <title><?= htmlspecialchars($welcomeTitle) ?> - <?= htmlspecialchars($siteName) ?></title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sora:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
     <link href="../assets/css/style.css" rel="stylesheet">
@@ -45,199 +55,236 @@ $rooms = $koneksi->query("SELECT * FROM rooms WHERE status_aktif = 1 ORDER BY ge
         window.__CALL_STAFF_URL__ = <?= json_encode($call_staff_url, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
         window.__VISITOR_BASE_URL__ = <?= json_encode($visitor_base_url, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
         window.__AUTO_OPEN_MODAL__ = <?= json_encode($auto_open, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+        window.__SITE_NAME__ = <?= json_encode($siteName, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+        window.__VISITOR_LOGO_URL__ = <?= json_encode($visitor_logo_url, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+        window.__VISITOR_LOGO_ALT__ = <?= json_encode($logoAlt, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+        window.__VISITOR_WELCOME_TITLE__ = <?= json_encode($welcomeTitle, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+        window.__VISITOR_SERVICES__ = <?= json_encode($visitorServices, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
     </script>
     <style>
-        /* Room detail modal image sizing (shared visitor pattern) */
-        #roomDetailModal .carousel-item img {
-            width: 100%;
-            max-height: 420px;
-            object-fit: cover;
-        }
-        #roomDetailModal .modal-body { padding: 1.5rem; }
-        :root {
-            --primary: #2563eb;
-            --secondary: #0369a1;
-            --success: #10b981;
-            --warning: #f59e0b;
-            --info: #3b82f6;
+        body.visitor-page {
+            background: #030712;
+            font-family: 'Plus Jakarta Sans', Inter, sans-serif;
+            color: #e2e8f0;
+            min-height: 100dvh;
+            overflow-x: hidden;
+            overscroll-behavior: none;
+            -webkit-tap-highlight-color: transparent;
         }
 
-        .room-card {
-            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
-            border-radius: 16px;
-            padding: 25px;
-            margin-bottom: 20px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
-            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            border: 2px solid transparent;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .room-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 4px;
-            background: linear-gradient(90deg, var(--primary), var(--secondary), var(--success));
-            transform: scaleX(0);
-            transform-origin: left;
-            transition: transform 0.4s ease;
-        }
-
-        .room-card:hover {
-            transform: translateY(-8px) scale(1.02);
-            box-shadow: 0 12px 40px rgba(0,0,0,0.15);
-            border-color: var(--primary);
-        }
-
-        .room-card:hover::before {
-            transform: scaleX(1);
-        }
-
-        .room-card-header {
-            display: flex;
-            align-items: center;
-            margin-bottom: 15px;
-            padding-bottom: 12px;
-            border-bottom: 2px solid #e2e8f0;
-        }
-
-        .room-icon-wrapper {
-            width: 50px;
-            height: 50px;
-            border-radius: 12px;
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-right: 15px;
-            color: white;
-            font-size: 1.5rem;
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
-            transition: all 0.3s;
-        }
-
-        .room-card:hover .room-icon-wrapper {
-            transform: rotate(5deg) scale(1.1);
-            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
-        }
-
-        .room-title {
-            font-size: 1.3rem;
-            font-weight: 700;
-            color: #1e293b;
-            margin: 0;
-            flex: 1;
-        }
-
-        .room-code-badge {
-            display: inline-block;
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            color: white;
-            padding: 6px 14px;
-            border-radius: 20px;
-            font-size: 0.85rem;
-            font-weight: 600;
-            margin-bottom: 12px;
-            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
-        }
-
-        .room-detail-item {
-            display: flex;
-            align-items: flex-start;
-            margin-bottom: 12px;
-            padding: 8px;
-            border-radius: 8px;
-            background: #f8fafc;
-            transition: all 0.3s;
-        }
-
-        .room-card:hover .room-detail-item {
-            background: #f1f5f9;
-            transform: translateX(5px);
-        }
-
-        .room-detail-item i {
-            font-size: 1.2rem;
-            width: 24px;
-            margin-right: 12px;
-            margin-top: 2px;
-            flex-shrink: 0;
-        }
-
-        .room-detail-item i.text-success {
-            color: var(--success) !important;
-        }
-
-        .room-detail-item i.text-info {
-            color: var(--info) !important;
-        }
-
-        .room-detail-item i.text-warning {
-            color: var(--warning) !important;
-        }
-
-        .room-detail-item strong {
-            color: #475569;
-            font-size: 0.9rem;
-            margin-right: 5px;
-        }
-
-        .room-detail-item span {
-            color: #64748b;
-            font-size: 0.95rem;
-        }
-
-        .room-capacity {
-            display: inline-block;
-            background: linear-gradient(135deg, var(--warning), #f59e0b);
-            color: white;
-            padding: 4px 12px;
-            border-radius: 15px;
-            font-weight: 600;
-            font-size: 0.9rem;
-            box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
-        }
-
-        .room-description {
-            background: linear-gradient(135deg, #f8fafc, #ffffff);
-            padding: 12px 15px;
-            border-radius: 10px;
-            border-left: 3px solid var(--primary);
-            margin-top: 15px;
-            color: #64748b;
-            font-size: 0.9rem;
-            line-height: 1.6;
-        }
-
-        .modal-content {
-            border-radius: 16px;
-            border: none;
-        }
-
-        .modal-header {
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            color: white;
-            border-radius: 16px 16px 0 0;
+        #visitor-landing-root {
+            min-height: 100dvh;
         }
 
         #roomsModal .modal-dialog {
-            max-width: min(96vw, 1500px);
+            max-width: min(96vw, 1180px);
             margin: 1rem auto;
         }
 
         #roomsModal .modal-content {
             min-height: 82vh;
+            border: 1px solid rgba(255, 255, 255, 0.78);
+            border-radius: 24px;
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.94) 0%, rgba(255, 255, 255, 0.78) 100%);
+            color: #0f172a;
+            overflow: hidden;
+            box-shadow:
+                0 24px 60px rgba(15, 23, 42, 0.22),
+                inset 0 1px 0 rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(22px) saturate(1.35);
+            -webkit-backdrop-filter: blur(22px) saturate(1.35);
+        }
+
+        #roomsModal .modal-header {
+            background: transparent;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+            padding: 1.15rem 1.5rem;
+            color: #0f172a;
+        }
+
+        #roomsModal .modal-title {
+            font-family: Sora, 'Plus Jakarta Sans', sans-serif;
+            font-weight: 600;
+            font-size: 1.35rem;
+            letter-spacing: -0.02em;
+            display: flex;
+            align-items: center;
+            gap: 0.55rem;
+            color: #0f172a;
+        }
+
+        #roomsModal .modal-title i {
+            color: #0284c7;
+            font-size: 1.15rem;
+        }
+
+        #roomsModal .btn-close {
+            opacity: 0.55;
+        }
+
+        #roomsModal .btn-close:hover {
+            opacity: 0.9;
         }
 
         #roomsModal .modal-body {
-            max-height: calc(82vh - 88px);
+            max-height: calc(82vh - 76px);
             overflow-y: auto;
-            padding: 1.25rem 1.5rem;
+            padding: 1.5rem 1.65rem 1.9rem;
             position: relative;
+        }
+
+        #roomsModal .rooms-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 1.35rem;
+        }
+
+        @media (max-width: 767.98px) {
+            #roomsModal .rooms-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        #roomsModal .room-card {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            text-decoration: none;
+            color: inherit;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.78);
+            background: linear-gradient(145deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0.7) 100%);
+            box-shadow:
+                0 12px 28px rgba(15, 23, 42, 0.1),
+                inset 0 1px 0 rgba(255, 255, 255, 0.9);
+            overflow: hidden;
+            transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+        }
+
+        #roomsModal .room-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(14, 165, 233, 0.35);
+            box-shadow:
+                0 18px 36px rgba(15, 23, 42, 0.14),
+                inset 0 1px 0 rgba(255, 255, 255, 1);
+            color: inherit;
+        }
+
+        #roomsModal .room-media {
+            position: relative;
+            aspect-ratio: 16 / 10;
+            background: linear-gradient(145deg, #e0f2fe 0%, #dbeafe 55%, #e2e8f0 100%);
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        #roomsModal .room-media img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        #roomsModal .room-media-fallback {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: rgba(14, 165, 233, 0.45);
+            font-size: 2.6rem;
+        }
+
+        #roomsModal .room-body {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            padding: 1.1rem 1.2rem 1.25rem;
+            min-height: 11.5rem;
+        }
+
+        #roomsModal .room-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+            margin-bottom: 0.65rem;
+        }
+
+        #roomsModal .room-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            padding: 0.22rem 0.65rem;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            border: 1px solid rgba(148, 163, 184, 0.28);
+            background: rgba(248, 250, 252, 0.9);
+            color: #64748b;
+        }
+
+        #roomsModal .room-chip.is-code {
+            color: #0369a1;
+            border-color: rgba(14, 165, 233, 0.28);
+            background: rgba(14, 165, 233, 0.1);
+        }
+
+        #roomsModal .room-title {
+            font-family: Sora, 'Plus Jakarta Sans', sans-serif;
+            font-size: 1.15rem;
+            font-weight: 600;
+            letter-spacing: -0.02em;
+            color: #0f172a;
+            margin: 0 0 0.45rem;
+            line-height: 1.25;
+        }
+
+        #roomsModal .room-meta {
+            margin: 0;
+            color: #64748b;
+            font-size: 0.9rem;
+            line-height: 1.45;
+        }
+
+        #roomsModal .room-meta + .room-meta {
+            margin-top: 0.2rem;
+        }
+
+        #roomsModal .room-cta {
+            margin-top: auto;
+            padding-top: 1rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            color: #0284c7;
+            font-size: 0.92rem;
+            font-weight: 600;
+        }
+
+        #roomsModal .room-card:hover .room-cta i {
+            transform: translateX(3px);
+        }
+
+        #roomsModal .room-cta i {
+            transition: transform 0.25s ease;
+            font-size: 0.95rem;
+        }
+
+        #roomsModal .rooms-empty {
+            text-align: center;
+            color: #64748b;
+            padding: 3.5rem 1rem;
+        }
+
+        #roomsModal .rooms-empty i {
+            font-size: 3rem;
+            opacity: 0.35;
+            color: #0284c7;
+        }
+
+        #roomsModal .rooms-empty h5 {
+            color: #0f172a !important;
         }
 
         .rooms-scroll-hint {
@@ -250,7 +297,7 @@ $rooms = $koneksi->query("SELECT * FROM rooms WHERE status_aktif = 1 ORDER BY ge
             display: flex;
             justify-content: center;
             padding: 2.5rem 1rem 1.1rem;
-            background: linear-gradient(to top, rgba(255, 255, 255, 0.98) 38%, rgba(255, 255, 255, 0));
+            background: linear-gradient(to top, rgba(255, 255, 255, 0.96) 35%, rgba(255, 255, 255, 0));
             opacity: 0;
             transform: translateY(14px);
             transition: opacity 0.4s ease, transform 0.4s ease;
@@ -270,20 +317,20 @@ $rooms = $koneksi->query("SELECT * FROM rooms WHERE status_aktif = 1 ORDER BY ge
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 0.35rem;
-            padding: 0.85rem 1.15rem 0.7rem;
-            border-radius: 18px;
-            background: rgba(15, 23, 42, 0.82);
-            color: #fff;
-            box-shadow: 0 12px 32px rgba(15, 23, 42, 0.28);
-            backdrop-filter: blur(6px);
-            -webkit-backdrop-filter: blur(6px);
+            gap: 0.3rem;
+            padding: 0.75rem 1.1rem 0.65rem;
+            border-radius: 16px;
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            background: rgba(255, 255, 255, 0.9);
+            color: #0f172a;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.1);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
         }
 
         .rooms-scroll-silhouette {
-            width: 42px;
-            height: 54px;
-            position: relative;
+            width: 36px;
+            height: 46px;
             animation: roomsScrollSilhouetteBob 1.8s ease-in-out infinite;
         }
 
@@ -291,26 +338,24 @@ $rooms = $koneksi->query("SELECT * FROM rooms WHERE status_aktif = 1 ORDER BY ge
             width: 100%;
             height: 100%;
             display: block;
-            fill: #fff;
+            fill: #64748b;
         }
 
         .rooms-scroll-hint-text {
-            font-size: 0.78rem;
+            font-size: 0.72rem;
             font-weight: 700;
-            letter-spacing: 0.03em;
+            letter-spacing: 0.04em;
             text-transform: uppercase;
-            opacity: 0.95;
+            color: #64748b;
         }
 
         .rooms-scroll-arrows {
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 0;
-            margin-top: 0.1rem;
-            color: #93c5fd;
-            font-size: 1rem;
             line-height: 0.55;
+            color: #0284c7;
+            font-size: 0.95rem;
             animation: roomsScrollArrowBounce 1.2s ease-in-out infinite;
         }
 
@@ -326,31 +371,12 @@ $rooms = $koneksi->query("SELECT * FROM rooms WHERE status_aktif = 1 ORDER BY ge
 
         @media (prefers-reduced-motion: reduce) {
             .rooms-scroll-silhouette,
-            .rooms-scroll-arrows {
+            .rooms-scroll-arrows,
+            #roomsModal .room-card {
                 animation: none;
+                transition: none;
             }
         }
-
-        #roomsModal .room-thumbnail {
-            width: 100%;
-            height: 220px;
-            border-radius: 12px;
-            overflow: hidden;
-            margin-bottom: 15px;
-            background: #e2e8f0;
-        }
-
-        #roomsModal .room-card {
-            height: 100%;
-        }
-
-        body.visitor-page {
-            background: #030712;
-            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            color: #0f172a;
-            min-height: 100vh;
-        }
-
     </style>
 </head>
 <body class="visitor-page visitor-unified-shell">
@@ -383,97 +409,78 @@ $rooms = $koneksi->query("SELECT * FROM rooms WHERE status_aktif = 1 ORDER BY ge
                             </div>
                         </div>
                     </div>
-                    <div class="row">
-                        <?php 
+                    <div class="rooms-grid">
+                        <?php
                         $rooms->data_seek(0);
-                        if ($rooms->num_rows > 0): 
-                            while ($room = $rooms->fetch_assoc()): 
+                        if ($rooms->num_rows > 0):
+                            while ($room = $rooms->fetch_assoc()):
+                                $img_list = [];
+                                if (!empty($room['images'])) {
+                                    $img_list = array_filter(array_map('trim', explode(',', $room['images'])));
+                                } elseif (!empty($room['foto'])) {
+                                    $img_list = [(string) $room['foto']];
+                                }
+                                $first_img = !empty($img_list) ? reset($img_list) : null;
+                                if ($first_img) {
+                                    $fi = trim((string) $first_img);
+                                    if (!preg_match('~^(https?://|/|\.\./)~i', $fi)) {
+                                        $fi = '../' . $fi;
+                                    }
+                                    $first_img = $fi;
+                                }
+                                $buildingBits = array_filter([
+                                    trim((string) ($room['gedung'] ?? '')),
+                                    trim((string) ($room['lantai'] ?? '')) !== ''
+                                        ? 'Lt ' . trim((string) $room['lantai'])
+                                        : '',
+                                ]);
+                                $buildingLine = implode(' · ', $buildingBits);
+                                $lokasi = trim((string) ($room['lokasi'] ?? ''));
+                                $kapasitas = (int) ($room['kapasitas'] ?? 0);
                         ?>
-                            <div class="col-md-6 mb-3">
-                                <div class="room-card">
-                                    <?php
-                                        // Extract first image from images field and normalize path
-                                        $img_list = [];
-                                        if (!empty($room['images'])) {
-                                            $img_list = array_filter(array_map('trim', explode(',', $room['images'])));
-                                        } elseif (!empty($room['foto'])) {
-                                            $img_list = [(string)$room['foto']];
-                                        }
-                                        $first_img = !empty($img_list) ? reset($img_list) : null;
-
-                                        // Normalize relative path for visitor folder: add ../ prefix when needed
-                                        if ($first_img) {
-                                            $fi = trim((string)$first_img);
-                                            if (!preg_match('~^(https?://|/|\.\./)~i', $fi)) {
-                                                $fi = '../' . $fi;
-                                            }
-                                            $first_img = $fi;
-                                        }
-                                    ?>
+                            <a class="room-card" href="room_detail.php?id=<?= (int) $room['id'] ?>">
+                                <div class="room-media">
                                     <?php if (!empty($first_img)): ?>
-                                        <div class="room-thumbnail">
-                                            <img src="<?= htmlspecialchars($first_img) ?>" alt="<?= htmlspecialchars($room['nama_ruangan']) ?>" 
-                                                 style="width: 100%; height: 100%; object-fit: cover;" onerror="this.style.display='none'">
+                                        <img
+                                            src="<?= htmlspecialchars($first_img) ?>"
+                                            alt="<?= htmlspecialchars($room['nama_ruangan']) ?>"
+                                            onerror="this.classList.add('d-none'); var fb=this.nextElementSibling; if(fb) fb.classList.remove('d-none');"
+                                        >
+                                        <div class="room-media-fallback d-none" aria-hidden="true">
+                                            <i class="bi bi-building"></i>
+                                        </div>
+                                    <?php else: ?>
+                                        <div class="room-media-fallback" aria-hidden="true">
+                                            <i class="bi bi-building"></i>
                                         </div>
                                     <?php endif; ?>
-                                    <div class="room-card-header">
-                                        <div class="room-icon-wrapper">
-                                            <i class="bi bi-door-open-fill"></i>
-                                        </div>
-                                        <h5 class="room-title"><?= htmlspecialchars($room['nama_ruangan']) ?></h5>
-                                    </div>
-                                    
-                                    <div class="room-code-badge">
-                                        <i class="bi bi-tag-fill"></i> <?= htmlspecialchars($room['kode_ruangan']) ?>
-                                    </div>
-                                    
-                                    <div class="room-detail-item">
-                                        <i class="bi bi-geo-alt-fill text-success"></i>
-                                        <div>
-                                            <strong>Lokasi:</strong>
-                                            <span><?= htmlspecialchars($room['lokasi']) ?></span>
-                                        </div>
-                                    </div>
-                                    
-                                    <?php if ($room['gedung']): ?>
-                                        <div class="room-detail-item">
-                                            <i class="bi bi-building text-info"></i>
-                                            <div>
-                                                <strong>Gedung:</strong>
-                                                <span>
-                                                    <?= htmlspecialchars($room['gedung']) ?>
-                                                    <?php if ($room['lantai']): ?>
-                                                        - Lantai <?= htmlspecialchars($room['lantai']) ?>
-                                                    <?php endif; ?>
-                                                </span>
-                                            </div>
-                                        </div>
-                                    <?php endif; ?>
-                                    
-                                    <?php if ($room['kapasitas'] > 0): ?>
-                                        <div class="room-detail-item">
-                                            <i class="bi bi-people text-warning"></i>
-                                            <div>
-                                                <strong>Kapasitas:</strong>
-                                                <span class="room-capacity"><?= $room['kapasitas'] ?> orang</span>
-                                            </div>
-                                        </div>
-                                    <?php endif; ?>
-                                    
-                                    <div class="room-actions mt-3">
-                                        <a href="room_detail.php?id=<?= (int)$room['id'] ?>" class="btn btn-outline-primary btn-sm w-100">
-                                            <i class="bi bi-card-list"></i> Detail Ruangan
-                                        </a>
-                                    </div>
                                 </div>
-                            </div>
-                        <?php 
+                                <div class="room-body">
+                                    <div class="room-chips">
+                                        <span class="room-chip is-code"><?= htmlspecialchars($room['kode_ruangan']) ?></span>
+                                        <?php if ($kapasitas > 0): ?>
+                                            <span class="room-chip"><?= $kapasitas ?> orang</span>
+                                        <?php endif; ?>
+                                    </div>
+                                    <h5 class="room-title"><?= htmlspecialchars($room['nama_ruangan']) ?></h5>
+                                    <?php if ($buildingLine !== ''): ?>
+                                        <p class="room-meta"><?= htmlspecialchars($buildingLine) ?></p>
+                                    <?php endif; ?>
+                                    <?php if ($lokasi !== ''): ?>
+                                        <p class="room-meta"><?= htmlspecialchars($lokasi) ?></p>
+                                    <?php endif; ?>
+                                    <span class="room-cta">
+                                        Detail ruangan <i class="bi bi-arrow-right"></i>
+                                    </span>
+                                </div>
+                            </a>
+                        <?php
                             endwhile;
-                        else: 
+                        else:
                         ?>
-                            <div class="col-12 text-center text-muted py-5">
-                                <i class="bi bi-inbox" style="font-size: 4rem; opacity: 0.3;"></i><br>
-                                <h5 class="mt-3">Tidak ada ruangan tersedia</h5>
+                            <div class="rooms-empty" style="grid-column: 1 / -1;">
+                                <i class="bi bi-inbox"></i>
+                                <h5 class="mt-3 mb-0">Tidak ada ruangan tersedia</h5>
                             </div>
                         <?php endif; ?>
                     </div>

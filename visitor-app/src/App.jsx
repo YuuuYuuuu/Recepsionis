@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import { MdMeetingRoom, MdSchool, MdPhoneInTalk } from 'react-icons/md'
 import DynamicBlueWallpaper from './DynamicBlueWallpaper.jsx'
 import HeaderSection from './HeaderSection.jsx'
 import ServiceCard from './ServiceCard.jsx'
+import { ProdiIcon, RoomIcon, StaffIcon } from './ServiceIcons.jsx'
 import VirtualReceptionist from './VirtualReceptionist.jsx'
 import StaffCallForm from './StaffCallForm.jsx'
 
@@ -35,9 +35,47 @@ function getVisitorPhpBaseUrl() {
   }
 }
 
+function getVisitorServices() {
+  const defaults = {
+    rooms: {
+      title: 'Daftar Ruangan',
+      description: 'Cari ruangan, gedung, dan lokasi di kampus.',
+      cta: 'Lihat ruangan',
+    },
+    prodi: {
+      title: 'Program Studi',
+      description: 'Jelajahi program studi yang ada di kampus.',
+      cta: 'Lihat prodi',
+    },
+    staff: {
+      title: 'Panggil Staff',
+      description: 'Hubungi operator, notifikasi langsung ke tim.',
+      cta: 'Panggil sekarang',
+    },
+  }
+
+  if (typeof window !== 'undefined' && window.__VISITOR_SERVICES__) {
+    const services = window.__VISITOR_SERVICES__
+    return {
+      rooms: { ...defaults.rooms, ...(services.rooms || {}) },
+      prodi: { ...defaults.prodi, ...(services.prodi || {}) },
+      staff: { ...defaults.staff, ...(services.staff || {}) },
+    }
+  }
+
+  return defaults
+}
+
 export default function App() {
   const [highlighted, setHighlighted] = useState(null)
   const [staffCallOpen, setStaffCallOpen] = useState(false)
+  const services = getVisitorServices()
+
+  useEffect(() => {
+    const root = document.getElementById('visitor-landing-root')
+    root?.classList.add('visitor-kiosk-root')
+    return () => root?.classList.remove('visitor-kiosk-root')
+  }, [])
 
   useEffect(() => {
     if (!highlighted) return undefined
@@ -63,50 +101,50 @@ export default function App() {
   }, [])
 
   return (
-    <div className="tw-relative tw-min-h-0 tw-pb-28">
+    <div className="kiosk-shell tw-relative tw-flex tw-min-h-[100dvh] tw-flex-col">
       {staffCallOpen && <StaffCallForm onClose={() => setStaffCallOpen(false)} />}
       <DynamicBlueWallpaper />
 
-      <div className="tw-relative tw-z-10">
+      <div className="tw-relative tw-z-10 tw-flex tw-flex-1 tw-flex-col tw-justify-start tw-pb-20">
         <HeaderSection />
 
-        <div className="tw-mx-auto tw-max-w-6xl tw-px-4">
-          <div className="tw-grid tw-grid-cols-1 tw-gap-6 md:tw-grid-cols-2 lg:tw-grid-cols-3">
-          <ServiceCard
-            id="service-daftar-ruangan"
-            theme="green"
-            icon={MdMeetingRoom}
-            title="Daftar Ruangan"
-            description="Lihat informasi ruangan dan lokasinya"
-            ctaLabel="Lihat Ruangan"
-            highlighted={highlighted === 'rooms'}
-            delay={0.08}
-            onActivate={activateRooms}
-          />
-          <ServiceCard
-            id="service-program-studi"
-            theme="orange"
-            icon={MdSchool}
-            title="Program Studi"
-            description="Lihat daftar program studi yang tersedia di kampus"
-            ctaLabel="Lihat Prodi"
-            highlighted={highlighted === 'prodi'}
-            delay={0.16}
-            onActivate={activateProdi}
-          />
-          <ServiceCard
-            id="service-panggil-staff"
-            theme="blue"
-            icon={MdPhoneInTalk}
-            title="Panggil Staff"
-            description="Isi formulir keperluan, operator akan dihubungi via WhatsApp"
-            ctaLabel="Panggil Staff"
-            highlighted={highlighted === 'staff'}
-            delay={0.24}
-            onActivate={activateStaff}
-          />
+        <main className="tw-px-5 tw-pt-10 sm:tw-px-8 sm:tw-pt-12 lg:tw-px-10 lg:tw-pt-14">
+          <div className="tw-mx-auto tw-grid tw-w-full tw-max-w-7xl tw-grid-cols-1 tw-items-stretch tw-gap-5 md:tw-grid-cols-3 md:tw-gap-6 lg:tw-gap-7">
+            <ServiceCard
+              id="service-daftar-ruangan"
+              theme="green"
+              icon={RoomIcon}
+              title={services.rooms.title}
+              description={services.rooms.description}
+              ctaLabel={services.rooms.cta}
+              highlighted={highlighted === 'rooms'}
+              delay={0.08}
+              onActivate={activateRooms}
+            />
+            <ServiceCard
+              id="service-program-studi"
+              theme="orange"
+              icon={ProdiIcon}
+              title={services.prodi.title}
+              description={services.prodi.description}
+              ctaLabel={services.prodi.cta}
+              highlighted={highlighted === 'prodi'}
+              delay={0.16}
+              onActivate={activateProdi}
+            />
+            <ServiceCard
+              id="service-panggil-staff"
+              theme="blue"
+              icon={StaffIcon}
+              title={services.staff.title}
+              description={services.staff.description}
+              ctaLabel={services.staff.cta}
+              highlighted={highlighted === 'staff'}
+              delay={0.24}
+              onActivate={activateStaff}
+            />
           </div>
-        </div>
+        </main>
       </div>
 
       <VirtualReceptionist />

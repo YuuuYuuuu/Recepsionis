@@ -170,12 +170,7 @@ $prodi_list = $koneksi->query("SELECT * FROM prodi ORDER BY fakultas, nama_prodi
 
             <div class="col-md-10 content-area">
                 <div class="d-flex justify-content-between align-items-center mb-4">
-                    <div>
-                        <h2><i class="bi bi-mortarboard"></i> Program Studi</h2>
-                        <p class="text-muted mb-0">
-                            <small><i class="bi bi-info-circle"></i> Data program studi ditampilkan di halaman visitor: foto, deskripsi, kontak person, email, telepon, dan QR code</small>
-                        </p>
-                    </div>
+                    <h2 class="mb-0"><i class="bi bi-mortarboard"></i> Program Studi</h2>
                     <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addModal">
                         <i class="bi bi-plus-circle"></i> Tambah Prodi
                     </button>

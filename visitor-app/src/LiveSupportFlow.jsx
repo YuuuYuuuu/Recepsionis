@@ -297,11 +297,11 @@ export default function LiveSupportFlow({ onClose }) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="tw-fixed tw-inset-0 tw-z-[1000] tw-flex tw-items-center tw-justify-center tw-bg-slate-950/90 tw-p-4 tw-backdrop-blur-sm"
+      className="tw-fixed tw-inset-0 tw-z-[1000] tw-flex tw-items-center tw-justify-center tw-bg-[#041018]/60 tw-p-4 tw-backdrop-blur-md"
     >
       <motion.div
         layout
-        className="tw-flex tw-h-[min(92vh,720px)] tw-w-full tw-max-w-lg tw-flex-col tw-overflow-hidden tw-rounded-2xl tw-border tw-border-slate-700 tw-bg-slate-900 tw-shadow-2xl"
+        className="tw-flex tw-h-[min(92vh,720px)] tw-w-full tw-max-w-lg tw-flex-col tw-overflow-hidden tw-rounded-[1.5rem] tw-border tw-border-white/80 tw-bg-[linear-gradient(145deg,rgba(255,255,255,0.96)_0%,rgba(255,255,255,0.84)_100%)] tw-shadow-[0_24px_60px_rgba(15,23,42,0.22)]"
       >
         <div className="tw-flex tw-items-center tw-justify-between tw-border-b tw-border-slate-700 tw-bg-gradient-to-r tw-from-blue-600 tw-to-sky-600 tw-px-4 tw-py-3">
           <div className="tw-flex tw-items-center tw-gap-3">
@@ -343,27 +343,27 @@ export default function LiveSupportFlow({ onClose }) {
               className="tw-flex tw-flex-1 tw-flex-col tw-gap-3 tw-overflow-y-auto tw-p-4"
             >
               {error && (
-                <div className="tw-rounded-lg tw-bg-red-500/15 tw-px-3 tw-py-2 tw-text-sm tw-text-red-200">{error}</div>
+                <div className="tw-rounded-lg tw-bg-red-50 tw-px-3 tw-py-2 tw-text-sm tw-text-red-700">{error}</div>
               )}
-              <label className="tw-block tw-text-xs tw-font-medium tw-text-slate-400">Nama</label>
+              <label className="tw-block tw-text-xs tw-font-medium tw-text-slate-500">Nama</label>
               <input
-                className="tw-w-full tw-rounded-xl tw-border tw-border-slate-600 tw-bg-slate-800 tw-px-3 tw-py-2 tw-text-sm tw-text-white placeholder:tw-text-slate-500"
+                className="tw-w-full tw-rounded-xl tw-border tw-border-slate-200 tw-bg-white/90 tw-px-3 tw-py-2 tw-text-sm tw-text-slate-900 placeholder:tw-text-slate-400"
                 value={form.guest_name}
                 onChange={(e) => setForm((f) => ({ ...f, guest_name: e.target.value }))}
                 placeholder="Nama lengkap"
                 required
               />
-              <label className="tw-block tw-text-xs tw-font-medium tw-text-slate-400">No. Telepon</label>
+              <label className="tw-block tw-text-xs tw-font-medium tw-text-slate-500">No. Telepon</label>
               <input
-                className="tw-w-full tw-rounded-xl tw-border tw-border-slate-600 tw-bg-slate-800 tw-px-3 tw-py-2 tw-text-sm tw-text-white placeholder:tw-text-slate-500"
+                className="tw-w-full tw-rounded-xl tw-border tw-border-slate-200 tw-bg-white/90 tw-px-3 tw-py-2 tw-text-sm tw-text-slate-900 placeholder:tw-text-slate-400"
                 value={form.visitor_phone}
                 onChange={(e) => setForm((f) => ({ ...f, visitor_phone: e.target.value }))}
                 placeholder="08xxxxxxxxxx"
                 required
               />
-              <label className="tw-block tw-text-xs tw-font-medium tw-text-slate-400">Kategori</label>
+              <label className="tw-block tw-text-xs tw-font-medium tw-text-slate-500">Kategori</label>
               <select
-                className="tw-w-full tw-rounded-xl tw-border tw-border-slate-600 tw-bg-slate-800 tw-px-3 tw-py-2 tw-text-sm tw-text-white"
+                className="tw-w-full tw-rounded-xl tw-border tw-border-slate-200 tw-bg-white/90 tw-px-3 tw-py-2 tw-text-sm tw-text-slate-900"
                 value={form.category_id}
                 onChange={(e) => setForm((f) => ({ ...f, category_id: e.target.value }))}
                 required
@@ -375,9 +375,9 @@ export default function LiveSupportFlow({ onClose }) {
                   </option>
                 ))}
               </select>
-              <label className="tw-block tw-text-xs tw-font-medium tw-text-slate-400">Pesan awal</label>
+              <label className="tw-block tw-text-xs tw-font-medium tw-text-slate-500">Pesan awal</label>
               <textarea
-                className="tw-min-h-[100px] tw-w-full tw-rounded-xl tw-border tw-border-slate-600 tw-bg-slate-800 tw-px-3 tw-py-2 tw-text-sm tw-text-white placeholder:tw-text-slate-500"
+                className="tw-min-h-[100px] tw-w-full tw-rounded-xl tw-border tw-border-slate-200 tw-bg-white/90 tw-px-3 tw-py-2 tw-text-sm tw-text-slate-900 placeholder:tw-text-slate-400"
                 value={form.message}
                 onChange={(e) => setForm((f) => ({ ...f, message: e.target.value }))}
                 placeholder="Jelaskan keperluan Anda…"
@@ -425,8 +425,8 @@ export default function LiveSupportFlow({ onClose }) {
               className="tw-flex tw-flex-1 tw-flex-col tw-items-center tw-justify-center tw-gap-4 tw-p-8 tw-text-center"
             >
               <div className="tw-h-12 tw-w-12 tw-animate-spin tw-rounded-full tw-border-2 tw-border-sky-400 tw-border-t-transparent" />
-              <p className="tw-text-slate-300">Menunggu admin menerima permintaan Anda…</p>
-              <p className="tw-text-xs tw-text-slate-500">Jangan tutup halaman ini</p>
+              <p className="tw-text-slate-600">Menunggu admin menerima permintaan Anda…</p>
+              <p className="tw-text-xs tw-text-slate-400">Jangan tutup halaman ini</p>
             </motion.div>
           )}
 
@@ -439,7 +439,7 @@ export default function LiveSupportFlow({ onClose }) {
             >
               <div
                 ref={listRef}
-                className="tw-flex-1 tw-space-y-3 tw-overflow-y-auto tw-bg-slate-950/50 tw-p-4"
+                className="tw-flex-1 tw-space-y-3 tw-overflow-y-auto tw-bg-slate-50/80 tw-p-4"
               >
                 {messages.map((m, i) => (
                   <div
@@ -449,7 +449,7 @@ export default function LiveSupportFlow({ onClose }) {
                     <div
                       className={`tw-max-w-[85%] tw-rounded-2xl tw-px-3 tw-py-2 tw-text-sm ${
                         m.sender === 'guest'
-                          ? 'tw-bg-slate-700 tw-text-slate-100'
+                          ? 'tw-bg-white tw-text-slate-800 tw-ring-1 tw-ring-slate-200'
                           : 'tw-bg-sky-600 tw-text-white'
                       }`}
                     >
@@ -474,10 +474,10 @@ export default function LiveSupportFlow({ onClose }) {
                   <p className="tw-text-xs tw-italic tw-text-slate-500">Admin mengetik…</p>
                 )}
               </div>
-              <div className="tw-border-t tw-border-slate-700 tw-p-3">
+              <div className="tw-border-t tw-border-slate-200 tw-p-3">
                 <div className="tw-flex tw-gap-2">
                   <input
-                    className="tw-min-w-0 tw-flex-1 tw-rounded-xl tw-border tw-border-slate-600 tw-bg-slate-800 tw-px-3 tw-py-2 tw-text-sm tw-text-white"
+                    className="tw-min-w-0 tw-flex-1 tw-rounded-xl tw-border tw-border-slate-200 tw-bg-white tw-px-3 tw-py-2 tw-text-sm tw-text-slate-900"
                     value={input}
                     onChange={(e) => onInputChange(e.target.value)}
                     onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), sendMessage())}
@@ -507,8 +507,8 @@ export default function LiveSupportFlow({ onClose }) {
               animate={{ opacity: 1, scale: 1 }}
               className="tw-flex tw-flex-1 tw-flex-col tw-items-center tw-justify-center tw-gap-4 tw-p-8 tw-text-center"
             >
-              <p className="tw-text-lg tw-font-medium tw-text-white">Sesi telah diakhiri</p>
-              <p className="tw-text-sm tw-text-slate-400">Terima kasih. Anda dapat memulai percakapan baru kapan saja.</p>
+              <p className="tw-text-lg tw-font-medium tw-text-slate-900">Sesi telah diakhiri</p>
+              <p className="tw-text-sm tw-text-slate-500">Terima kasih. Anda dapat memulai percakapan baru kapan saja.</p>
               <motion.button
                 type="button"
                 onClick={backToLanding}

@@ -1,0 +1,37 @@
+.qr-with-logo {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
+
+.qr-with-logo__code canvas,
+.qr-with-logo__code img,
+.qr-with-logo__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.qr-with-logo .qr-logo-plate,
+.qr-with-logo .qr-logo-mark {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.qr-with-logo .qr-logo-plate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  box-sizing: border-box;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.08);
+}
+
+.qr-with-logo .qr-logo-plate .qr-logo-mark {
+  position: static;
+  transform: none;
+  display: block;
+}

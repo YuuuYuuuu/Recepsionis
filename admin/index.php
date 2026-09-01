@@ -73,17 +73,6 @@ $pending_staff_calls = $koneksi->query("SELECT * FROM staff_calls
             <div class="col-md-10 content-area admin-dashboard">
                 <div class="adm-dash-head">
                     <h2 class="adm-dash-title"><i class="bi bi-speedometer2"></i> Dashboard</h2>
-                    <div class="adm-dash-quick">
-                        <a href="<?= htmlspecialchars(function_exists('visitorUrl') ? visitorUrl('index.php') : '../visitor/index.php') ?>" class="btn btn-sm btn-outline-primary" target="_blank">
-                            <i class="bi bi-person-plus"></i> Check-In
-                        </a>
-                        <a href="<?= htmlspecialchars(function_exists('adminUrl') ? adminUrl('visitors.php') : 'visitors.php') ?>" class="btn btn-sm btn-outline-primary">
-                            <i class="bi bi-people"></i> Data Tamu
-                        </a>
-                        <a href="<?= htmlspecialchars(function_exists('adminUrl') ? adminUrl('staff_calls.php') : 'staff_calls.php') ?>" class="btn btn-sm btn-outline-primary">
-                            <i class="bi bi-telephone"></i> Panggilan
-                        </a>
-                    </div>
                 </div>
 
                 <!-- Statistics Cards -->

@@ -194,6 +194,64 @@ body:has(.sidebar) .sidebar .notification-badge {
     min-width: 1.25rem;
 }
 
+body:has(.sidebar) .sidebar .nav-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+body:has(.sidebar) .sidebar .nav-group-toggle {
+    width: 100%;
+    justify-content: space-between;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
+    text-align: left;
+}
+
+body:has(.sidebar) .sidebar .nav-group-toggle-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.65rem;
+    min-width: 0;
+    flex: 1;
+}
+
+body:has(.sidebar) .sidebar .nav-group-chevron {
+    font-size: 0.75rem;
+    opacity: 0.65;
+    transition: transform 0.2s ease;
+    width: auto !important;
+    flex-shrink: 0;
+}
+
+body:has(.sidebar) .sidebar .nav-group.is-open > .nav-group-toggle .nav-group-chevron {
+    transform: rotate(180deg);
+}
+
+body:has(.sidebar) .sidebar .nav-sub {
+    display: none;
+    flex-direction: column;
+    gap: 0.1rem;
+    padding: 0.1rem 0 0.35rem 0.55rem;
+    margin-left: 0.55rem;
+    border-left: 2px solid var(--adm-border);
+}
+
+body:has(.sidebar) .sidebar .nav-group.is-open > .nav-sub {
+    display: flex;
+}
+
+body:has(.sidebar) .sidebar .nav-sub .nav-link {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.82rem;
+}
+
+body:has(.sidebar) .sidebar .nav-sub .nav-link i {
+    font-size: 0.95rem;
+}
+
 /* ── Main content ── */
 body:has(.sidebar) .content-area {
     padding: 1.5rem 1.75rem 2rem;

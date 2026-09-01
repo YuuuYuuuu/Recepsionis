@@ -88,7 +88,7 @@ $floor_plan_image_url = $has_floor_plan_image ? visitor_asset_url($floor_plan['g
     <title><?= htmlspecialchars($room['nama_ruangan']) ?> - Recepsionis</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sora:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
     <link href="../assets/css/style.css" rel="stylesheet">
@@ -443,7 +443,7 @@ $floor_plan_image_url = $has_floor_plan_image ? visitor_asset_url($floor_plan['g
 
         /* Harmonize with shared visitor system */
         body {
-            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Plus Jakarta Sans', Inter, 'Segoe UI', sans-serif;
         }
         .hero-section,
         .features-section,

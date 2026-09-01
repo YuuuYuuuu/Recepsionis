@@ -337,7 +337,15 @@
     }
 }
 
-/* Helpdesk IT ticket popup variant */
+/* Helpdesk IT — popup lama dinonaktifkan (notifikasi via card dashboard) */
+.staff-call-notification.scn-helpdesk-ticket,
+.staff-call-notification[data-notification-type="helpdesk_it"] {
+    display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+}
+
+/* Helpdesk IT ticket popup variant (legacy) */
 .staff-call-notification .scn-header--helpdesk {
     background: linear-gradient(135deg, #1d4ed8 0%, #0369a1 100%);
 }

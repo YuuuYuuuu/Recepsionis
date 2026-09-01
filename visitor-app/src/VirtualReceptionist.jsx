@@ -8,15 +8,15 @@ const FULL_MESSAGE =
 const INFO_TIPS = [
   {
     title: 'Informasi ruangan',
-    text: 'Gunakan kartu hijau "Daftar Ruangan". Di sana Anda bisa melihat daftar ruang, lokasi, lalu membuka detail jika perlu.',
+    text: 'Ketuk Daftar Ruangan untuk melihat ruang, gedung, dan lokasi.',
   },
   {
     title: 'Program studi',
-    text: 'Gunakan kartu oranye "Program Studi" untuk membuka halaman katalog program studi.',
+    text: 'Ketuk Program Studi untuk membuka katalog prodi kampus.',
   },
   {
     title: 'Menghubungi staff',
-    text: 'Gunakan kartu biru "Panggil Staff", lalu isi formulir. Operator kategori terkait akan menerima notifikasi WhatsApp.',
+    text: 'Ketuk Panggil Staff, isi formulir, lalu operator akan menerima notifikasi WhatsApp.',
   },
 ]
 
@@ -115,7 +115,7 @@ export default function VirtualReceptionist() {
   return (
     <div
       ref={widgetRef}
-      className="tw-pointer-events-none tw-fixed tw-bottom-6 tw-right-6 tw-z-[1020] tw-flex tw-flex-col tw-items-end tw-gap-3"
+      className="tw-pointer-events-none tw-fixed tw-bottom-6 tw-right-6 tw-z-[1020] tw-flex tw-flex-col tw-items-end tw-gap-2 sm:tw-bottom-8 sm:tw-right-8"
     >
       <AnimatePresence>
         {showBubble && !open && (
@@ -123,7 +123,7 @@ export default function VirtualReceptionist() {
             initial={{ opacity: 0, y: 6, scale: 0.92 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 4, scale: 0.95 }}
-            className="tw-pointer-events-none tw-max-w-[200px] tw-rounded-xl tw-bg-slate-900 tw-px-3 tw-py-2 tw-text-xs tw-font-medium tw-text-white tw-shadow-lg"
+            className="tw-pointer-events-none tw-max-w-[168px] tw-rounded-lg tw-bg-slate-900 tw-px-2.5 tw-py-1.5 tw-text-[0.68rem] tw-font-medium tw-text-white tw-shadow-lg"
           >
             {bubbleText}
           </motion.div>
@@ -208,8 +208,8 @@ export default function VirtualReceptionist() {
         aria-label={open ? 'Tutup Virtual Resepsionis' : 'Buka Virtual Resepsionis'}
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="tw-pointer-events-auto tw-relative tw-h-16 tw-w-16 tw-shrink-0 tw-overflow-hidden tw-rounded-2xl tw-border-2 tw-border-white tw-shadow-xl tw-outline-none tw-ring-4 tw-ring-blue-500/20 focus-visible:tw-ring-blue-500"
-        animate={{ y: [0, -10, 0] }}
+        className="tw-pointer-events-auto tw-relative tw-h-14 tw-w-14 tw-shrink-0 tw-overflow-hidden tw-rounded-xl tw-border-2 tw-border-white tw-shadow-lg tw-outline-none tw-ring-2 tw-ring-blue-500/20 focus-visible:tw-ring-blue-500 sm:tw-h-16 sm:tw-w-16"
+        animate={{ y: [0, -6, 0] }}
         transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
         whileHover={{ scale: 1.06 }}
         whileTap={{ scale: 0.94 }}

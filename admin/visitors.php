@@ -7,12 +7,38 @@ recepsionis_sync_staff_calls_to_visitors($koneksi);
 $autoCheckoutCount = recepsionis_run_auto_checkout($koneksi);
 
 // Handle actions
+$status_filter = $_GET['status'] ?? 'all';
+$allowedPerPage = [15, 25, 50, 100];
+$perPage = (int) ($_GET['per_page'] ?? 15);
+if (!in_array($perPage, $allowedPerPage, true)) {
+    $perPage = 15;
+}
+
+function visitors_page_url(int $page, string $statusFilter, int $perPage, array $extra = []): string
+{
+    $params = array_merge([
+        'status' => $statusFilter,
+        'page' => $page,
+        'per_page' => $perPage,
+    ], $extra);
+
+    return 'visitors.php?' . http_build_query($params);
+}
+
+function visitors_redirect_url(array $extra = []): string
+{
+    global $status_filter, $perPage;
+    $page = max(1, (int) ($_GET['page'] ?? 1));
+
+    return visitors_page_url($page, $status_filter, $perPage, $extra);
+}
+
 if (isset($_GET['checkout'])) {
     $id = intval($_GET['checkout']);
     if ($id > 0) {
         recepsionis_checkout_visitor_by_id($koneksi, $id);
     }
-    header("Location: visitors.php?success=checkout");
+    header('Location: ' . visitors_redirect_url(['success' => 'checkout']));
     exit;
 }
 
@@ -24,13 +50,20 @@ if (isset($_GET['delete'])) {
         $stmt->execute();
         $stmt->close();
     }
-    header("Location: visitors.php?success=deleted");
+    header('Location: ' . visitors_redirect_url(['success' => 'deleted']));
     exit;
 }
 
-// Get visitors
-$status_filter = $_GET['status'] ?? 'all';
-$visitors = recepsionis_fetch_visitors($koneksi, $status_filter);
+$totalRows = recepsionis_count_visitors($koneksi, $status_filter);
+$totalPages = max(1, (int) ceil($totalRows / $perPage));
+$page = max(1, (int) ($_GET['page'] ?? 1));
+if ($page > $totalPages) {
+    $page = $totalPages;
+}
+$offset = ($page - 1) * $perPage;
+$visitors = recepsionis_fetch_visitors($koneksi, $status_filter, $perPage, $offset);
+$rangeStart = $totalRows > 0 ? $offset + 1 : 0;
+$rangeEnd = $totalRows > 0 ? min($offset + $perPage, $totalRows) : 0;
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -60,43 +93,15 @@ $visitors = recepsionis_fetch_visitors($koneksi, $status_filter);
             min-height: calc(100vh - 56px);
         }
 
-        .page-header-card {
-            background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
-            color: white;
-            padding: 25px 30px;
-            border-radius: 12px;
-            margin-bottom: 25px;
-            box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
-        }
-
-        .page-header-card h2 {
-            margin: 0;
+        .visitors-toolbar-title {
+            font-size: 1.35rem;
             font-weight: 700;
-            font-size: 1.8rem;
+            color: var(--adm-text, #15202b);
+            margin: 0;
         }
 
-        .page-header-card .btn {
-            background: rgba(255, 255, 255, 0.2);
-            border: 2px solid white;
-            color: white;
-            font-weight: 600;
-            padding: 10px 20px;
-            transition: all 0.3s;
-        }
-
-        .page-header-card .btn:hover {
-            background: white;
-            color: var(--primary);
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-        }
-
-        .filter-card {
-            background: white;
-            border-radius: 12px;
-            padding: 1rem 1.15rem;
-            margin-bottom: 25px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        .visitors-toolbar-title i {
+            color: var(--adm-accent, #0f6e56);
         }
 
         .visitors-table-card {
@@ -265,13 +270,50 @@ $visitors = recepsionis_fetch_visitors($koneksi, $status_filter);
             <?php include 'sidebar.php'; ?>
 
             <div class="col-md-10 content-area">
-                <!-- Page Header -->
-                <div class="page-header-card">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <h2><i class="bi bi-people"></i> Data Tamu</h2>
-                        <a href="../visitor/index.php" class="btn" target="_blank">
-                            <i class="bi bi-person-plus"></i> Check-In Baru
-                        </a>
+                <!-- Toolbar: judul + filter -->
+                <div class="card mb-3 adm-filter-panel">
+                    <div class="card-body">
+                        <div class="adm-filter-toolbar adm-filter-toolbar--helpdesk">
+                            <div class="adm-filter-row">
+                                <div class="adm-filter-group">
+                                    <h2 class="visitors-toolbar-title"><i class="bi bi-people"></i> Data Tamu</h2>
+                                </div>
+                                <div class="ms-auto">
+                                    <a href="../visitor/index.php" class="btn btn-primary btn-sm" target="_blank">
+                                        <i class="bi bi-person-plus"></i> Check-In Baru
+                                    </a>
+                                </div>
+                            </div>
+                            <div class="adm-filter-row adm-filter-row--meta">
+                                <div class="adm-filter-group adm-filter-group--grow">
+                                    <span class="adm-filter-label"><i class="bi bi-funnel"></i> Status</span>
+                                    <div class="adm-segment adm-segment-scroll" role="group" aria-label="Filter status tamu">
+                                        <a href="?status=all&per_page=<?= (int) $perPage ?>" class="adm-segment-item <?= $status_filter == 'all' ? 'is-active' : '' ?>">
+                                            <i class="bi bi-list-ul"></i> Semua
+                                        </a>
+                                        <a href="?status=checked-in&per_page=<?= (int) $perPage ?>" class="adm-segment-item <?= $status_filter == 'checked-in' ? 'is-active' : '' ?>">
+                                            <i class="bi bi-box-arrow-in-right"></i> Check-In
+                                        </a>
+                                        <a href="?status=checked-out&per_page=<?= (int) $perPage ?>" class="adm-segment-item <?= $status_filter == 'checked-out' ? 'is-active' : '' ?>">
+                                            <i class="bi bi-box-arrow-right"></i> Check-Out
+                                        </a>
+                                        <a href="?status=pending&per_page=<?= (int) $perPage ?>" class="adm-segment-item <?= $status_filter == 'pending' ? 'is-active' : '' ?>">
+                                            <i class="bi bi-clock"></i> Pending
+                                        </a>
+                                    </div>
+                                </div>
+                                <form method="get" class="adm-filter-pagination">
+                                    <input type="hidden" name="status" value="<?= htmlspecialchars($status_filter) ?>">
+                                    <input type="hidden" name="page" value="1">
+                                    <label class="adm-filter-label mb-0" for="visitors-per-page">Tampilkan</label>
+                                    <select id="visitors-per-page" name="per_page" class="form-select form-select-sm adm-filter-select" onchange="this.form.submit()">
+                                        <?php foreach ($allowedPerPage as $option): ?>
+                                            <option value="<?= $option ?>" <?= $perPage === $option ? 'selected' : '' ?>><?= $option ?> / halaman</option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </form>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -294,33 +336,13 @@ $visitors = recepsionis_fetch_visitors($koneksi, $status_filter);
                     </div>
                 <?php endif; ?>
 
-                <!-- Filter -->
-                <div class="filter-card adm-filter-panel">
-                    <div class="adm-filter-toolbar">
-                        <div class="adm-filter-group">
-                            <span class="adm-filter-label"><i class="bi bi-funnel"></i> Status</span>
-                            <div class="adm-segment" role="group" aria-label="Filter status tamu">
-                                <a href="?status=all" class="adm-segment-item <?= $status_filter == 'all' ? 'is-active' : '' ?>">
-                                    <i class="bi bi-list-ul"></i> Semua
-                                </a>
-                                <a href="?status=checked-in" class="adm-segment-item <?= $status_filter == 'checked-in' ? 'is-active' : '' ?>">
-                                    <i class="bi bi-box-arrow-in-right"></i> Check-In
-                                </a>
-                                <a href="?status=checked-out" class="adm-segment-item <?= $status_filter == 'checked-out' ? 'is-active' : '' ?>">
-                                    <i class="bi bi-box-arrow-right"></i> Check-Out
-                                </a>
-                                <a href="?status=pending" class="adm-segment-item <?= $status_filter == 'pending' ? 'is-active' : '' ?>">
-                                    <i class="bi bi-clock"></i> Pending
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
                 <!-- Visitors Table -->
                 <div class="visitors-table-card">
-                    <div class="card-header">
-                        <i class="bi bi-list-ul"></i> Daftar Tamu
+                    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                        <span><i class="bi bi-list-ul"></i> Daftar Tamu</span>
+                        <?php if ($totalRows > 0): ?>
+                            <span class="small opacity-75">Menampilkan <?= (int) $rangeStart ?>–<?= (int) $rangeEnd ?> dari <?= (int) $totalRows ?> tamu</span>
+                        <?php endif; ?>
                     </div>
                     <div class="card-body p-0">
                         <div class="table-responsive" style="max-height: 70vh; overflow-y: auto;">
@@ -406,7 +428,7 @@ $visitors = recepsionis_fetch_visitors($koneksi, $status_filter);
                                                 <td>
                                                     <div class="action-buttons">
                                                         <?php if ($visitor['status'] == 'checked-in'): ?>
-                                                            <a href="?checkout=<?= $visitor['id'] ?>" 
+                                                            <a href="<?= htmlspecialchars(visitors_page_url($page, $status_filter, $perPage, ['checkout' => (int) $visitor['id']])) ?>"
                                                                class="btn btn-warning btn-sm"
                                                                onclick="return confirm('Check-out tamu ini?')"
                                                                title="Check-Out">
@@ -419,7 +441,7 @@ $visitors = recepsionis_fetch_visitors($koneksi, $status_filter);
                                                            title="Cetak Badge">
                                                             <i class="bi bi-printer"></i>
                                                         </a>
-                                                           <a href="?delete=<?= $visitor['id'] ?>" 
+                                                           <a href="<?= htmlspecialchars(visitors_page_url($page, $status_filter, $perPage, ['delete' => (int) $visitor['id']])) ?>"
                                                            class="btn btn-danger btn-sm"
                                                            onclick="return confirm('Yakin ingin menghapus data tamu <?= htmlspecialchars($visitor['nama'] ?? '') ?>?')"
                                                            title="Hapus">
@@ -441,6 +463,50 @@ $visitors = recepsionis_fetch_visitors($koneksi, $status_filter);
                                 </tbody>
                             </table>
                         </div>
+                        <?php if ($totalPages > 1): ?>
+                            <div class="card-footer d-flex flex-wrap justify-content-between align-items-center gap-3">
+                                <div class="small text-muted">
+                                    Halaman <?= (int) $page ?> dari <?= (int) $totalPages ?>
+                                </div>
+                                <nav aria-label="Navigasi halaman tamu">
+                                    <ul class="pagination pagination-sm mb-0 flex-wrap">
+                                        <li class="page-item <?= $page <= 1 ? 'disabled' : '' ?>">
+                                            <a class="page-link" href="<?= htmlspecialchars(visitors_page_url(max(1, $page - 1), $status_filter, $perPage)) ?>">Sebelumnya</a>
+                                        </li>
+                                        <?php for ($p = 1; $p <= $totalPages; $p++): ?>
+                                            <?php
+                                            $pStart = (($p - 1) * $perPage) + 1;
+                                            $pEnd = min($p * $perPage, $totalRows);
+                                            ?>
+                                            <li class="page-item <?= $p === $page ? 'active' : '' ?>">
+                                                <a class="page-link" href="<?= htmlspecialchars(visitors_page_url($p, $status_filter, $perPage)) ?>" title="Data <?= $pStart ?>–<?= $pEnd ?>">
+                                                    <?= $p ?> <span class="d-none d-md-inline">(<?= $pStart ?>–<?= $pEnd ?>)</span>
+                                                </a>
+                                            </li>
+                                        <?php endfor; ?>
+                                        <li class="page-item <?= $page >= $totalPages ? 'disabled' : '' ?>">
+                                            <a class="page-link" href="<?= htmlspecialchars(visitors_page_url(min($totalPages, $page + 1), $status_filter, $perPage)) ?>">Berikutnya</a>
+                                        </li>
+                                    </ul>
+                                </nav>
+                                <form method="get" class="d-flex align-items-center gap-2">
+                                    <input type="hidden" name="status" value="<?= htmlspecialchars($status_filter) ?>">
+                                    <input type="hidden" name="per_page" value="<?= (int) $perPage ?>">
+                                    <label class="small text-muted mb-0">Lompat</label>
+                                    <select name="page" class="form-select form-select-sm" style="width:auto; min-width: 9rem;" onchange="this.form.submit()">
+                                        <?php for ($p = 1; $p <= $totalPages; $p++): ?>
+                                            <?php
+                                            $pStart = (($p - 1) * $perPage) + 1;
+                                            $pEnd = min($p * $perPage, $totalRows);
+                                            ?>
+                                            <option value="<?= $p ?>" <?= $p === $page ? 'selected' : '' ?>>
+                                                Halaman <?= $p ?> (<?= $pStart ?>–<?= $pEnd ?>)
+                                            </option>
+                                        <?php endfor; ?>
+                                    </select>
+                                </form>
+                            </div>
+                        <?php endif; ?>
                     </div>
                 </div>
             </div>

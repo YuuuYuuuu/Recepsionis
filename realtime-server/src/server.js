@@ -124,7 +124,7 @@ async function getActiveAdminsForCategory(conn, categoryId) {
     `SELECT u.id, u.username, u.nama_lengkap, u.email, u.role
      FROM admin_category_routing acr
      INNER JOIN users u ON u.id = acr.user_id
-     WHERE acr.category_id = ? AND u.status_aktif = 1
+     WHERE acr.category_id = ? AND u.status_aktif = 1 AND COALESCE(u.status_tugas, 1) = 1
      ORDER BY COALESCE(NULLIF(u.nama_lengkap, ''), u.username) ASC, u.id ASC`,
     [categoryId]
   );
@@ -144,7 +144,7 @@ async function getActiveUserById(conn, userId) {
   const [rows] = await conn.query(
     `SELECT id, username, nama_lengkap, email, role
      FROM users
-     WHERE id = ? AND status_aktif = 1
+     WHERE id = ? AND status_aktif = 1 AND COALESCE(status_tugas, 1) = 1
      LIMIT 1`,
     [userId]
   );
@@ -425,7 +425,7 @@ async function syncPendingLiveForAdmin(socket) {
               SELECT 1
               FROM users ua
               WHERE ua.id = sc.assigned_user_id
-                AND ua.status_aktif = 1
+                AND ua.status_aktif = 1 AND COALESCE(ua.status_tugas, 1) = 1
             )
             AND sc.assigned_user_id = ?
           )
@@ -436,7 +436,7 @@ async function syncPendingLiveForAdmin(socket) {
                 SELECT 1
                 FROM users ua2
                 WHERE ua2.id = sc.assigned_user_id
-                  AND ua2.status_aktif = 1
+                  AND ua2.status_aktif = 1 AND COALESCE(ua2.status_tugas, 1) = 1
               )
             )
             AND (
@@ -444,14 +444,14 @@ async function syncPendingLiveForAdmin(socket) {
               OR EXISTS (
                 SELECT 1
                 FROM admin_category_routing acr
-                INNER JOIN users u1 ON u1.id = acr.user_id AND u1.status_aktif = 1
+                INNER JOIN users u1 ON u1.id = acr.user_id AND u1.status_aktif = 1 AND COALESCE(u1.status_tugas, 1) = 1
                 WHERE acr.category_id = sc.category_id
                   AND acr.user_id = ?
               )
               OR NOT EXISTS (
                 SELECT 1
                 FROM admin_category_routing acr2
-                INNER JOIN users u2 ON u2.id = acr2.user_id AND u2.status_aktif = 1
+                INNER JOIN users u2 ON u2.id = acr2.user_id AND u2.status_aktif = 1 AND COALESCE(u2.status_tugas, 1) = 1
                 WHERE acr2.category_id = sc.category_id
               )
             )
@@ -467,7 +467,7 @@ async function syncPendingLiveForAdmin(socket) {
             SELECT 1
             FROM users ua2
             WHERE ua2.id = sc.assigned_user_id
-              AND ua2.status_aktif = 1
+              AND ua2.status_aktif = 1 AND COALESCE(ua2.status_tugas, 1) = 1
           )
           OR (
             sc.assigned_user_id = ?
@@ -475,7 +475,7 @@ async function syncPendingLiveForAdmin(socket) {
               SELECT 1
               FROM users ua
               WHERE ua.id = sc.assigned_user_id
-                AND ua.status_aktif = 1
+                AND ua.status_aktif = 1 AND COALESCE(ua.status_tugas, 1) = 1
             )
           )
         )
@@ -488,14 +488,14 @@ async function syncPendingLiveForAdmin(socket) {
           OR EXISTS (
             SELECT 1
             FROM admin_category_routing acr
-            INNER JOIN users u1 ON u1.id = acr.user_id AND u1.status_aktif = 1
+            INNER JOIN users u1 ON u1.id = acr.user_id AND u1.status_aktif = 1 AND COALESCE(u1.status_tugas, 1) = 1
             WHERE acr.category_id = sc.category_id
               AND acr.user_id = ?
           )
           OR NOT EXISTS (
             SELECT 1
             FROM admin_category_routing acr2
-            INNER JOIN users u2 ON u2.id = acr2.user_id AND u2.status_aktif = 1
+            INNER JOIN users u2 ON u2.id = acr2.user_id AND u2.status_aktif = 1 AND COALESCE(u2.status_tugas, 1) = 1
             WHERE acr2.category_id = sc.category_id
           )
         )
@@ -566,14 +566,14 @@ async function emitChatListForAdmin(socket, adminId) {
             OR EXISTS (
               SELECT 1
               FROM admin_category_routing acr
-              INNER JOIN users u1 ON u1.id = acr.user_id AND u1.status_aktif = 1
+              INNER JOIN users u1 ON u1.id = acr.user_id AND u1.status_aktif = 1 AND COALESCE(u1.status_tugas, 1) = 1
               WHERE acr.category_id = sc.category_id
                 AND acr.user_id = ?
             )
             OR NOT EXISTS (
               SELECT 1
               FROM admin_category_routing acr2
-              INNER JOIN users u2 ON u2.id = acr2.user_id AND u2.status_aktif = 1
+              INNER JOIN users u2 ON u2.id = acr2.user_id AND u2.status_aktif = 1 AND COALESCE(u2.status_tugas, 1) = 1
               WHERE acr2.category_id = sc.category_id
             )
           )`
@@ -587,7 +587,7 @@ async function emitChatListForAdmin(socket, adminId) {
                 SELECT 1
                 FROM users ua
                 WHERE ua.id = sc.assigned_user_id
-                  AND ua.status_aktif = 1
+                  AND ua.status_aktif = 1 AND COALESCE(ua.status_tugas, 1) = 1
               )
               AND sc.assigned_user_id = ?
             )
@@ -598,7 +598,7 @@ async function emitChatListForAdmin(socket, adminId) {
                   SELECT 1
                   FROM users ua2
                   WHERE ua2.id = sc.assigned_user_id
-                    AND ua2.status_aktif = 1
+                    AND ua2.status_aktif = 1 AND COALESCE(ua2.status_tugas, 1) = 1
                 )
               )
               AND ${routingClause}
@@ -611,7 +611,7 @@ async function emitChatListForAdmin(socket, adminId) {
                 SELECT 1
                 FROM users ua2
                 WHERE ua2.id = sc.assigned_user_id
-                  AND ua2.status_aktif = 1
+                  AND ua2.status_aktif = 1 AND COALESCE(ua2.status_tugas, 1) = 1
               )
               OR (
                 sc.assigned_user_id = ?
@@ -619,7 +619,7 @@ async function emitChatListForAdmin(socket, adminId) {
                   SELECT 1
                   FROM users ua
                   WHERE ua.id = sc.assigned_user_id
-                    AND ua.status_aktif = 1
+                    AND ua.status_aktif = 1 AND COALESCE(ua.status_tugas, 1) = 1
                 )
               )
             )`

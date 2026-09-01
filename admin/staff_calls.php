@@ -1,8 +1,16 @@
 <?php
 require_once 'auth.php';
 require_once '../staff_call_routing.php';
+require_once 'helpdesk_hub.php';
 
-requireComplaintOperatorPage();
+$isHelpdeskTicketsMode = defined('HELPDESK_HUB');
+
+if ($isHelpdeskTicketsMode) {
+    requireHelpdeskAccess();
+} else {
+    // Daftar Panggilan = modul E-Recepsionis (bukan Helpdesk)
+    requireRecepsionisPage();
+}
 
 function staffCallEventLabel(string $eventType): string
 {
@@ -24,7 +32,8 @@ function staffCallEventLabel(string $eventType): string
 
 $currentUserId = (int) ($_SESSION['user_id'] ?? 0);
 $currentUserRole = (string) ($_SESSION['role'] ?? '');
-$isAdminUser = currentUserIsAdmin();
+$isAdminUser = currentUserIsAdmin() || currentUserIsHelpdeskAdmin();
+$isHelpdeskTicketAdmin = $isAdminUser;
 $assignableUsers = recepsionis_get_active_backoffice_users($koneksi);
 
 // Handle actions
@@ -67,12 +76,16 @@ if (isset($_GET['answer'])) {
                 ['source' => 'staff_calls_page']
             );
             recepsionis_update_visitor_pic_from_staff_call($koneksi, $id, $currentUserId);
-            header("Location: staff_calls.php?success=answered");
+            header('Location: ' . ($isHelpdeskTicketsMode
+                ? helpdeskUrl('tickets', ['success' => 'answered'])
+                : adminUrl('staff_calls.php?success=answered')));
             exit;
         }
     }
 
-    header("Location: staff_calls.php?error=unauthorized");
+    header('Location: ' . ($isHelpdeskTicketsMode
+        ? helpdeskUrl('tickets', ['error' => 'unauthorized'])
+        : adminUrl('staff_calls.php?error=unauthorized')));
     exit;
 }
 
@@ -114,12 +127,16 @@ if (isset($_GET['cancel'])) {
                 'Panggilan dibatalkan dari halaman rekap.',
                 ['source' => 'staff_calls_page']
             );
-            header("Location: staff_calls.php?success=cancelled");
+            header('Location: ' . ($isHelpdeskTicketsMode
+                ? helpdeskUrl('tickets', ['success' => 'cancelled'])
+                : adminUrl('staff_calls.php?success=cancelled')));
             exit;
         }
     }
 
-    header("Location: staff_calls.php?error=unauthorized");
+    header('Location: ' . ($isHelpdeskTicketsMode
+        ? helpdeskUrl('tickets', ['error' => 'unauthorized'])
+        : adminUrl('staff_calls.php?error=unauthorized')));
     exit;
 }
 
@@ -135,7 +152,9 @@ if ($isAdminUser && isset($_POST['save_assignment'])) {
     $stmt->close();
 
     if (!$call || $call['status'] !== 'pending' || $assignedUserId <= 0) {
-        header("Location: staff_calls.php?error=assignment_invalid");
+        header('Location: ' . ($isHelpdeskTicketsMode
+            ? helpdeskUrl('tickets', ['error' => 'assignment_invalid'])
+            : adminUrl('staff_calls.php?error=assignment_invalid')));
         exit;
     }
 
@@ -150,12 +169,16 @@ if ($isAdminUser && isset($_POST['save_assignment'])) {
     );
 
     if (!$ok) {
-        header("Location: staff_calls.php?error=assignment_invalid");
+        header('Location: ' . ($isHelpdeskTicketsMode
+            ? helpdeskUrl('tickets', ['error' => 'assignment_invalid'])
+            : adminUrl('staff_calls.php?error=assignment_invalid')));
         exit;
     }
 
     $successCode = (int) ($call['assigned_user_id'] ?? 0) > 0 ? 'reassigned' : 'assigned';
-    header("Location: staff_calls.php?success={$successCode}");
+    header('Location: ' . ($isHelpdeskTicketsMode
+        ? helpdeskUrl('tickets', ['success' => $successCode])
+        : adminUrl('staff_calls.php?success=' . $successCode)));
     exit;
 }
 
@@ -167,17 +190,19 @@ if (!in_array($view_filter, ['all', 'mine'], true)) {
 }
 
 $helpdeskCategoryId = recepsionis_get_helpdesk_category_id($koneksi);
-$canManageHelpdeskTickets = $isAdminUser || recepsionis_user_is_helpdesk_pic($koneksi, $currentUserId);
-$channel_filter = $_GET['channel'] ?? 'all';
-if (!in_array($channel_filter, ['all', 'calls', 'tickets'], true)) {
-    $channel_filter = 'all';
-}
-if (!$canManageHelpdeskTickets) {
-    $channel_filter = 'calls';
-}
+$canManageHelpdeskTickets = $isHelpdeskTicketAdmin
+    || recepsionis_user_is_helpdesk_category_member($koneksi, $currentUserId);
 
-$showCallsTable = $channel_filter !== 'tickets';
-$showTicketsTable = $canManageHelpdeskTickets && $channel_filter !== 'calls';
+// Pisah ranah: Helpdesk = tiket QR saja; E-Recepsionis = daftar panggilan saja
+if ($isHelpdeskTicketsMode) {
+    $channel_filter = 'tickets';
+    $showCallsTable = false;
+    $showTicketsTable = true;
+} else {
+    $channel_filter = 'calls';
+    $showCallsTable = true;
+    $showTicketsTable = false;
+}
 $helpdeskStatusApiUrl = function_exists('apiUrl') ? apiUrl('helpdesk_it_update_status.php') : '../api/helpdesk_it_update_status.php';
 $actionCounts = recepsionis_get_helpdesk_action_counts(
     $koneksi,
@@ -186,6 +211,25 @@ $actionCounts = recepsionis_get_helpdesk_action_counts(
     $view_filter,
     $currentUserRole
 );
+
+$call_rows = [];
+$call_ids = [];
+$totalRows = 0;
+$allowedPerPage = [15, 25, 50, 100];
+$perPage = (int) ($_GET['per_page'] ?? 15);
+if (!in_array($perPage, $allowedPerPage, true)) {
+    $perPage = 15;
+}
+$totalPages = 1;
+$page = 1;
+$offset = 0;
+$call_rows_page = [];
+$call_ids_page = [];
+$logs_index = [];
+$rangeStart = 0;
+$rangeEnd = 0;
+
+if ($showCallsTable) {
 $query = "SELECT sc.*, h.nama as host_nama, u.nama_lengkap as answered_by_name,
                  u.username as answered_by_username,
                  au.nama_lengkap as assigned_user_name, au.username as assigned_username,
@@ -206,8 +250,6 @@ if ($status_filter != 'all') {
 $query .= " ORDER BY sc.created_at DESC";
 $calls = $koneksi->query($query);
 
-$call_rows = [];
-$call_ids = [];
 if ($calls) {
     while ($row = $calls->fetch_assoc()) {
         $canSee = $isAdminUser && $view_filter === 'all';
@@ -228,11 +270,6 @@ if ($calls) {
     }
 }
 $totalRows = count($call_rows);
-$allowedPerPage = [15, 25, 50, 100];
-$perPage = (int) ($_GET['per_page'] ?? 15);
-if (!in_array($perPage, $allowedPerPage, true)) {
-    $perPage = 15;
-}
 $totalPages = max(1, (int) ceil($totalRows / $perPage));
 $page = max(1, (int) ($_GET['page'] ?? 1));
 if ($page > $totalPages) {
@@ -247,22 +284,31 @@ $logs_index = recepsionis_get_staff_call_logs_index($koneksi, $call_ids_page);
 
 $rangeStart = $totalRows > 0 ? $offset + 1 : 0;
 $rangeEnd = $totalRows > 0 ? min($offset + $perPage, $totalRows) : 0;
+}
 
 $ticket_rows = [];
 if ($showTicketsTable && recepsionis_table_exists($koneksi, 'helpdesk_it_tickets')) {
-    $ticketQuery = 'SELECT * FROM helpdesk_it_tickets WHERE 1=1';
+    recepsionis_expire_stale_helpdesk_tickets($koneksi);
+    $hasAssignJoin = recepsionis_column_exists($koneksi, 'helpdesk_it_tickets', 'assigned_user_id');
+    $assignJoin = $hasAssignJoin
+        ? ' LEFT JOIN users u ON u.id = t.assigned_user_id'
+        : '';
+    $assignSelect = $hasAssignJoin
+        ? ', u.nama_lengkap AS assigned_user_name, u.username AS assigned_username'
+        : ", NULL AS assigned_user_name, NULL AS assigned_username";
+    $ticketQuery = "SELECT t.*{$assignSelect} FROM helpdesk_it_tickets t{$assignJoin} WHERE 1=1";
     if ($status_filter === 'pending') {
         $ticketQuery .= " AND status IN ('pending', 'in_progress')";
     } elseif ($status_filter === 'answered') {
-        $ticketQuery .= " AND status = 'resolved'";
+        $ticketQuery .= " AND status IN ('resolved', 'expired')";
     } elseif ($status_filter === 'cancelled') {
-        $ticketQuery .= ' AND 1=0';
+        $ticketQuery .= " AND status = 'expired'";
     }
     $ticketQuery .= ' ORDER BY created_at DESC LIMIT 200';
     $ticketResult = $koneksi->query($ticketQuery);
     if ($ticketResult) {
         while ($row = $ticketResult->fetch_assoc()) {
-            if ($isAdminUser) {
+            if ($isHelpdeskTicketAdmin) {
                 $ticket_rows[] = $row;
                 continue;
             }
@@ -270,16 +316,17 @@ if ($showTicketsTable && recepsionis_table_exists($koneksi, 'helpdesk_it_tickets
             if ($assignedUserId !== null && $assignedUserId <= 0) {
                 $assignedUserId = null;
             }
-            $canSee = recepsionis_user_can_receive_helpdesk_ticket(
+            $canSee = recepsionis_user_can_manage_helpdesk_it_ticket(
                 $koneksi,
                 $currentUserId,
                 $assignedUserId,
-                recepsionis_resolve_helpdesk_it_ticket_category_id($koneksi, $row)
-            ) || (int) ($row['assigned_user_id'] ?? 0) === $currentUserId;
+                recepsionis_resolve_helpdesk_it_ticket_category_id($koneksi, $row),
+                $currentUserRole
+            );
             if (!$canSee) {
                 continue;
             }
-            if ($status_filter === 'all' && ($row['status'] ?? '') === 'resolved' && (int) ($row['assigned_user_id'] ?? 0) !== $currentUserId) {
+            if ($status_filter === 'all' && ($row['status'] ?? '') === 'resolved' && (int) ($row['assigned_user_id'] ?? 0) !== $currentUserId && !$isHelpdeskTicketAdmin) {
                 continue;
             }
             $ticket_rows[] = $row;
@@ -298,41 +345,56 @@ function staff_calls_page_url(int $page, string $statusFilter, string $viewFilte
     if ($isAdminUser) {
         $params['view'] = $viewFilter;
     }
-    return 'staff_calls.php?' . http_build_query($params);
+    if (defined('HELPDESK_HUB')) {
+        return helpdeskUrl('tickets', $params);
+    }
+    $base = function_exists('adminUrl') ? adminUrl('staff_calls.php') : 'staff_calls.php';
+    return $base . '?' . http_build_query($params);
 }
+
+$pageTitle = $isHelpdeskTicketsMode ? 'Daftar Laporan — Helpdesk IT' : 'Daftar Panggilan - E-Recepsionis';
+$embedTicketsInPanel = $isHelpdeskTicketsMode && $showTicketsTable;
 ?>
+<?php if ($isHelpdeskTicketsMode): ?>
+<script>window.originalPageTitle = <?= json_encode($pageTitle, JSON_UNESCAPED_UNICODE) ?>;</script>
+<div class="hd-section-tickets">
+                <?php if (!$canManageHelpdeskTickets): ?>
+                <div class="alert alert-warning mb-3">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    Akun Anda belum ditugaskan ke kategori Helpdesk. Hubungi Admin Helpdesk agar dapat mengelola tiket masuk.
+                </div>
+                <?php endif; ?>
+<?php else: ?>
 <!DOCTYPE html>
 <html lang="id">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Helpdesk - E-Recepsionis System</title>
-    <script>
-        window.originalPageTitle = 'Helpdesk - E-Recepsionis System';
-    </script>
+    <title><?= htmlspecialchars($pageTitle) ?></title>
+    <script>window.originalPageTitle = <?= json_encode($pageTitle, JSON_UNESCAPED_UNICODE) ?>;</script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
     <link href="../assets/css/style.css" rel="stylesheet">
     <link href="../assets/css/toast.css" rel="stylesheet">
+    <?php include 'include_admin_head.php'; ?>
     <?php include 'include_staff_call_head.php'; ?>
 </head>
 <body>
     <?php include 'navbar.php'; ?>
-
     <div class="container-fluid">
         <div class="row">
             <?php include 'sidebar.php'; ?>
-
             <div class="col-md-10 content-area">
-                <h2 class="mb-1"><i class="bi bi-headset"></i> Helpdesk</h2>
+                <h2 class="mb-1"><i class="bi bi-telephone"></i> Daftar Panggilan</h2>
                 <p class="text-muted small mb-4">
-                    Satu antrian untuk kategori Helpdesk: panggilan dari tamu dan tiket dari form QR kelas.
+                    Panggilan staff dari tamu / visitor. Tiket QR kelas dikelola di modul Helpdesk IT.
                 </p>
+<?php endif; ?>
 
                 <?php if (isset($_GET['notice']) && $_GET['notice'] === 'live_chat_retired'): ?>
                     <div class="alert alert-info alert-dismissible fade show">
                         <i class="bi bi-info-circle"></i>
-                        Fitur Live Chat sudah dinonaktifkan. Gunakan antrian Helpdesk (panggilan & tiket QR) di halaman ini.
+                        Fitur Live Chat sudah dinonaktifkan. Gunakan daftar panggilan di halaman ini.
                         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     </div>
                 <?php endif; ?>
@@ -365,92 +427,92 @@ function staff_calls_page_url(int $page, string $statusFilter, string $viewFilte
                 <?php endif; ?>
 
                 <!-- Filter -->
+                <?php
+                $ticketFilterBase = static function (string $status) use ($isHelpdeskTicketsMode, $isAdminUser, $showCallsTable, $view_filter, $channel_filter, $perPage): string {
+                    if ($isHelpdeskTicketsMode && function_exists('helpdeskUrl')) {
+                        return helpdeskUrl('tickets', [
+                            'status' => $status,
+                            'per_page' => $perPage,
+                        ]);
+                    }
+                    $q = [
+                        'status' => $status,
+                        'channel' => $channel_filter,
+                        'per_page' => $perPage,
+                    ];
+                    if ($isAdminUser && $showCallsTable) {
+                        $q['view'] = $view_filter;
+                    }
+                    return '?' . http_build_query($q);
+                };
+                $renderStatusFilter = static function () use ($ticketFilterBase, $status_filter, $isHelpdeskTicketsMode, $actionCounts, $isAdminUser, $showCallsTable, $view_filter, $channel_filter, $perPage, $allowedPerPage): void {
+                    ?>
+                    <div class="adm-filter-toolbar adm-filter-toolbar--helpdesk">
+                        <div class="adm-filter-row">
+                            <div class="adm-filter-group adm-filter-group--grow">
+                                <span class="adm-filter-label"><i class="bi bi-funnel"></i> Status</span>
+                                <div class="adm-segment adm-segment-scroll" role="group" aria-label="Filter status">
+                                    <a href="<?= htmlspecialchars($ticketFilterBase('pending')) ?>" class="adm-segment-item <?= $status_filter == 'pending' ? 'is-active' : '' ?>">
+                                        <i class="bi bi-hourglass-split"></i> Pending
+                                        <?php
+                                        $pendingBadge = $isHelpdeskTicketsMode ? (int) $actionCounts['tickets'] : (int) $actionCounts['calls'];
+                                        if ($pendingBadge > 0):
+                                        ?>
+                                            <span class="adm-segment-badge"><?= htmlspecialchars(recepsionis_format_action_count($pendingBadge)) ?></span>
+                                        <?php endif; ?>
+                                    </a>
+                                    <a href="<?= htmlspecialchars($ticketFilterBase('answered')) ?>" class="adm-segment-item <?= $status_filter == 'answered' ? 'is-active' : '' ?>">
+                                        <i class="bi bi-check-circle"></i> <?= $isHelpdeskTicketsMode ? 'Selesai' : 'Terjawab' ?>
+                                    </a>
+                                    <?php if (!$isHelpdeskTicketsMode): ?>
+                                    <a href="<?= htmlspecialchars($ticketFilterBase('cancelled')) ?>" class="adm-segment-item <?= $status_filter == 'cancelled' ? 'is-active' : '' ?>">
+                                        <i class="bi bi-x-circle"></i> Dibatalkan
+                                    </a>
+                                    <?php endif; ?>
+                                    <a href="<?= htmlspecialchars($ticketFilterBase('all')) ?>" class="adm-segment-item <?= $status_filter == 'all' ? 'is-active' : '' ?>">
+                                        <i class="bi bi-list-ul"></i> Semua
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                        <?php if ($isAdminUser && $showCallsTable): ?>
+                        <div class="adm-filter-row adm-filter-row--meta">
+                            <div class="adm-filter-group">
+                                <span class="adm-filter-label"><i class="bi bi-eye"></i> Tampilan</span>
+                                <div class="adm-segment adm-segment--muted" role="group" aria-label="Filter tampilan panggilan">
+                                    <a href="?status=<?= urlencode($status_filter) ?>&view=all&channel=<?= urlencode($channel_filter) ?>&per_page=<?= $perPage ?>" class="adm-segment-item <?= $view_filter === 'all' ? 'is-active' : '' ?>">
+                                        Semua Panggilan
+                                    </a>
+                                    <a href="?status=<?= urlencode($status_filter) ?>&view=mine&channel=<?= urlencode($channel_filter) ?>&per_page=<?= $perPage ?>" class="adm-segment-item <?= $view_filter === 'mine' ? 'is-active' : '' ?>">
+                                        Panggilan Saya
+                                    </a>
+                                </div>
+                            </div>
+                            <form method="get" class="adm-filter-pagination">
+                                <input type="hidden" name="status" value="<?= htmlspecialchars($status_filter) ?>">
+                                <input type="hidden" name="channel" value="<?= htmlspecialchars($channel_filter) ?>">
+                                <input type="hidden" name="view" value="<?= htmlspecialchars($view_filter) ?>">
+                                <label class="adm-filter-label mb-0">Per halaman</label>
+                                <select name="per_page" class="form-select form-select-sm adm-filter-select" onchange="this.form.page.value=1; this.form.submit()">
+                                    <?php foreach ($allowedPerPage as $size): ?>
+                                        <option value="<?= $size ?>" <?= $perPage === $size ? 'selected' : '' ?>><?= $size ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <input type="hidden" name="page" value="1">
+                            </form>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                    <?php
+                };
+                ?>
+                <?php if (!$embedTicketsInPanel): ?>
                 <div class="card mb-3 adm-filter-panel">
                     <div class="card-body">
-                        <div class="adm-filter-toolbar adm-filter-toolbar--helpdesk">
-                            <div class="adm-filter-row">
-                                <?php if ($canManageHelpdeskTickets): ?>
-                                <div class="adm-filter-group">
-                                    <span class="adm-filter-label"><i class="bi bi-layers"></i> Sumber</span>
-                                    <div class="adm-segment adm-segment--muted" role="group" aria-label="Filter sumber helpdesk">
-                                        <a href="?status=<?= urlencode($status_filter) ?><?= $isAdminUser ? '&view=' . urlencode($view_filter) : '' ?>&channel=all&per_page=<?= $perPage ?>" class="adm-segment-item <?= $channel_filter === 'all' ? 'is-active' : '' ?>" data-helpdesk-badge="total">
-                                            <i class="bi bi-collection"></i> Semua
-                                            <?php if ($actionCounts['total'] > 0): ?>
-                                                <span class="adm-segment-badge"><?= htmlspecialchars(recepsionis_format_action_count($actionCounts['total'])) ?></span>
-                                            <?php endif; ?>
-                                        </a>
-                                        <a href="?status=<?= urlencode($status_filter) ?><?= $isAdminUser ? '&view=' . urlencode($view_filter) : '' ?>&channel=calls&per_page=<?= $perPage ?>" class="adm-segment-item <?= $channel_filter === 'calls' ? 'is-active' : '' ?>" data-helpdesk-badge="calls">
-                                            <i class="bi bi-telephone"></i> Panggilan
-                                            <?php if ($actionCounts['calls'] > 0): ?>
-                                                <span class="adm-segment-badge"><?= htmlspecialchars(recepsionis_format_action_count($actionCounts['calls'])) ?></span>
-                                            <?php endif; ?>
-                                        </a>
-                                        <a href="?status=<?= urlencode($status_filter) ?><?= $isAdminUser ? '&view=' . urlencode($view_filter) : '' ?>&channel=tickets&per_page=<?= $perPage ?>" class="adm-segment-item <?= $channel_filter === 'tickets' ? 'is-active' : '' ?>" data-helpdesk-badge="tickets">
-                                            <i class="bi bi-ticket-detailed"></i> Tiket QR
-                                            <?php if ($actionCounts['tickets'] > 0): ?>
-                                                <span class="adm-segment-badge"><?= htmlspecialchars(recepsionis_format_action_count($actionCounts['tickets'])) ?></span>
-                                            <?php endif; ?>
-                                        </a>
-                                    </div>
-                                </div>
-                                <?php endif; ?>
-                                <div class="adm-filter-group adm-filter-group--grow">
-                                    <span class="adm-filter-label"><i class="bi bi-funnel"></i> Status</span>
-                                    <div class="adm-segment adm-segment-scroll" role="group" aria-label="Filter status panggilan">
-                                        <a href="?status=pending<?= $isAdminUser ? '&view=' . urlencode($view_filter) : '' ?>&channel=<?= urlencode($channel_filter) ?>&per_page=<?= $perPage ?>" class="adm-segment-item <?= $status_filter == 'pending' ? 'is-active' : '' ?>" data-helpdesk-badge="pending">
-                                            <i class="bi bi-hourglass-split"></i> Pending
-                                            <?php if ($actionCounts['total'] > 0): ?>
-                                                <span class="adm-segment-badge"><?= htmlspecialchars(recepsionis_format_action_count($actionCounts['total'])) ?></span>
-                                            <?php endif; ?>
-                                        </a>
-                                        <a href="?status=answered<?= $isAdminUser ? '&view=' . urlencode($view_filter) : '' ?>&channel=<?= urlencode($channel_filter) ?>&per_page=<?= $perPage ?>" class="adm-segment-item <?= $status_filter == 'answered' ? 'is-active' : '' ?>">
-                                            <i class="bi bi-check-circle"></i> Terjawab
-                                        </a>
-                                        <a href="?status=cancelled<?= $isAdminUser ? '&view=' . urlencode($view_filter) : '' ?>&channel=<?= urlencode($channel_filter) ?>&per_page=<?= $perPage ?>" class="adm-segment-item <?= $status_filter == 'cancelled' ? 'is-active' : '' ?>">
-                                            <i class="bi bi-x-circle"></i> Dibatalkan
-                                        </a>
-                                        <a href="?status=all<?= $isAdminUser ? '&view=' . urlencode($view_filter) : '' ?>&channel=<?= urlencode($channel_filter) ?>&per_page=<?= $perPage ?>" class="adm-segment-item <?= $status_filter == 'all' ? 'is-active' : '' ?>">
-                                            <i class="bi bi-list-ul"></i> Semua
-                                        </a>
-                                    </div>
-                                </div>
-                            </div>
-                            <?php if ($isAdminUser || $showCallsTable): ?>
-                            <div class="adm-filter-row adm-filter-row--meta">
-                                <?php if ($isAdminUser): ?>
-                                    <div class="adm-filter-group">
-                                        <span class="adm-filter-label"><i class="bi bi-eye"></i> Tampilan</span>
-                                        <div class="adm-segment adm-segment--muted" role="group" aria-label="Filter tampilan panggilan">
-                                            <a href="?status=<?= urlencode($status_filter) ?>&view=all&channel=<?= urlencode($channel_filter) ?>&per_page=<?= $perPage ?>" class="adm-segment-item <?= $view_filter === 'all' ? 'is-active' : '' ?>">
-                                                Semua Panggilan
-                                            </a>
-                                            <a href="?status=<?= urlencode($status_filter) ?>&view=mine&channel=<?= urlencode($channel_filter) ?>&per_page=<?= $perPage ?>" class="adm-segment-item <?= $view_filter === 'mine' ? 'is-active' : '' ?>">
-                                                Panggilan Saya
-                                            </a>
-                                        </div>
-                                    </div>
-                                <?php endif; ?>
-                                <?php if ($showCallsTable): ?>
-                                <form method="get" class="adm-filter-pagination">
-                                    <input type="hidden" name="status" value="<?= htmlspecialchars($status_filter) ?>">
-                                    <input type="hidden" name="channel" value="<?= htmlspecialchars($channel_filter) ?>">
-                                    <?php if ($isAdminUser): ?>
-                                        <input type="hidden" name="view" value="<?= htmlspecialchars($view_filter) ?>">
-                                    <?php endif; ?>
-                                    <label class="adm-filter-label mb-0">Per halaman</label>
-                                    <select name="per_page" class="form-select form-select-sm adm-filter-select" onchange="this.form.page.value=1; this.form.submit()">
-                                        <?php foreach ($allowedPerPage as $size): ?>
-                                            <option value="<?= $size ?>" <?= $perPage === $size ? 'selected' : '' ?>><?= $size ?></option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                    <input type="hidden" name="page" value="1">
-                                </form>
-                                <?php endif; ?>
-                            </div>
-                            <?php endif; ?>
-                        </div>
+                        <?php $renderStatusFilter(); ?>
                     </div>
                 </div>
+                <?php endif; ?>
 
                 <?php if ($showCallsTable): ?>
                 <!-- Calls Table -->
@@ -694,49 +756,88 @@ function staff_calls_page_url(int $page, string $statusFilter, string $viewFilte
                 <?php endif; ?>
 
                 <?php if ($showTicketsTable): ?>
+                <?php if ($embedTicketsInPanel): ?>
+                <section class="hd-panel hd-tickets-panel">
+                    <div class="hd-panel-head">
+                        <div>
+                            <h2><i class="bi bi-journal-text"></i> Daftar Laporan</h2>
+                            <p>Total <?= count($ticket_rows) ?> tiket</p>
+                        </div>
+                    </div>
+                    <div class="hd-tickets-filter">
+                        <?php $renderStatusFilter(); ?>
+                    </div>
+                    <div class="hd-table-wrap">
+                        <table class="hd-table">
+                <?php else: ?>
                 <div class="card">
                     <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
-                        <span><i class="bi bi-ticket-detailed"></i> Tiket QR Kelas</span>
-                        <span class="small text-muted">Total <strong><?= count($ticket_rows) ?></strong> tiket</span>
+                        <span><i class="bi bi-journal-text"></i> Daftar Laporan</span>
+                        <span class="small opacity-75">Total <strong><?= count($ticket_rows) ?></strong> tiket</span>
                     </div>
                     <div class="table-responsive">
                         <table class="table table-hover mb-0 align-middle">
+                <?php endif; ?>
                             <thead>
                                 <tr>
                                     <th>ID</th>
                                     <th>Waktu</th>
-                                    <th>Sumber</th>
-                                    <th>Nama</th>
-                                    <th>Nomor</th>
-                                    <th>Kelas</th>
-                                    <th>Kendala</th>
+                                    <th>Tipe</th>
+                                    <th>Lokasi</th>
+                                    <th>Kategori</th>
+                                    <th>Ditindak Oleh</th>
+                                    <th>Catatan</th>
                                     <th>Status</th>
+                                    <th>Waktu Respon</th>
                                     <th>Aksi</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 <?php if (!empty($ticket_rows)): ?>
                                     <?php foreach ($ticket_rows as $t): ?>
+                                        <?php
+                                        $formatted = recepsionis_format_helpdesk_ticket_table_row($t);
+                                        $ticketStatus = (string) ($t['status'] ?? 'pending');
+                                        $response = recepsionis_helpdesk_ticket_response_display($t);
+                                        $isExpiredTicket = $ticketStatus === 'expired';
+                                        $assignedForPerm = isset($t['assigned_user_id']) ? (int) $t['assigned_user_id'] : null;
+                                        if ($assignedForPerm !== null && $assignedForPerm <= 0) {
+                                            $assignedForPerm = null;
+                                        }
+                                        $canManageThisTicket = recepsionis_user_can_manage_helpdesk_it_ticket(
+                                            $koneksi,
+                                            $currentUserId,
+                                            $assignedForPerm,
+                                            recepsionis_resolve_helpdesk_it_ticket_category_id($koneksi, $t),
+                                            $currentUserRole
+                                        );
+                                        ?>
                                         <tr data-ticket-row="<?= (int) $t['id'] ?>">
-                                            <td>#<?= (int) $t['id'] ?></td>
-                                            <td class="small"><?= htmlspecialchars(date('d/m/Y H:i', strtotime((string) $t['created_at']))) ?></td>
-                                            <td><span class="badge bg-primary">Tiket QR</span></td>
-                                            <td><?= htmlspecialchars($t['nama']) ?></td>
-                                            <td><?= htmlspecialchars($t['nomor']) ?></td>
-                                            <td><?= htmlspecialchars($t['kelas']) ?></td>
-                                            <td class="small" style="max-width:220px;"><?= nl2br(htmlspecialchars($t['kendala'])) ?></td>
-                                            <td>
-                                                <?php
-                                                $badge = 'secondary';
-                                                if ($t['status'] === 'pending') {
-                                                    $badge = 'warning text-dark';
-                                                } elseif ($t['status'] === 'in_progress') {
-                                                    $badge = 'info text-dark';
-                                                } elseif ($t['status'] === 'resolved') {
-                                                    $badge = 'success';
-                                                }
-                                                ?>
-                                                <span class="badge bg-<?= $badge ?>" data-ticket-badge="<?= (int) $t['id'] ?>"><?= htmlspecialchars($t['status']) ?></span>
+                                            <td data-label="ID"><span class="hd-ticket-id"><?= htmlspecialchars($formatted['id']) ?></span></td>
+                                            <td data-label="Waktu"><?= htmlspecialchars($formatted['time']) ?></td>
+                                            <td data-label="Tipe"><span class="hd-chip"><?= htmlspecialchars($formatted['type']) ?></span></td>
+                                            <td data-label="Lokasi"><?= htmlspecialchars($formatted['location']) ?></td>
+                                            <td data-label="Kategori"><span class="hd-chip"><?= htmlspecialchars($formatted['category']) ?></span></td>
+                                            <td data-label="Ditindak Oleh"><?= htmlspecialchars($formatted['handler']) ?></td>
+                                            <td data-label="Catatan" class="hd-notes-cell"><?= nl2br(htmlspecialchars($formatted['notes'])) ?></td>
+                                            <td data-label="Status">
+                                                <?php if ($embedTicketsInPanel): ?>
+                                                    <span class="hd-status <?= htmlspecialchars($formatted['status_class']) ?>" data-ticket-badge="<?= (int) $t['id'] ?>"><?= htmlspecialchars($formatted['status']) ?></span>
+                                                <?php else: ?>
+                                                    <?php
+                                                    $badge = 'secondary';
+                                                    if ($t['status'] === 'pending') {
+                                                        $badge = 'warning text-dark';
+                                                    } elseif ($t['status'] === 'in_progress') {
+                                                        $badge = 'info text-dark';
+                                                    } elseif ($t['status'] === 'resolved') {
+                                                        $badge = 'success';
+                                                    } elseif ($t['status'] === 'expired') {
+                                                        $badge = 'dark';
+                                                    }
+                                                    ?>
+                                                    <span class="badge bg-<?= $badge ?>" data-ticket-badge="<?= (int) $t['id'] ?>"><?= htmlspecialchars($t['status']) ?></span>
+                                                <?php endif; ?>
                                                 <?php
                                                 $ticketFollowUp = (string) ($t['follow_up_action'] ?? 'none');
                                                 if ($ticketFollowUp !== '' && $ticketFollowUp !== 'none'):
@@ -746,46 +847,102 @@ function staff_calls_page_url(int $page, string $statusFilter, string $viewFilte
                                                     </span>
                                                 <?php endif; ?>
                                             </td>
-                                            <td>
+                                            <td data-label="Waktu Respon" data-ticket-response="<?= (int) $t['id'] ?>">
+                                                <?php if ($response['label'] === '—'): ?>
+                                                    <span class="text-muted">—</span>
+                                                <?php else: ?>
+                                                    <span class="fw-semibold hd-response-tone hd-response-tone--<?= htmlspecialchars($response['tone']) ?>"><?= htmlspecialchars($response['label']) ?></span>
+                                                    <?php if ($response['is_expired']): ?>
+                                                        <div class="text-muted small">expired (&gt;24 jam)</div>
+                                                    <?php endif; ?>
+                                                <?php endif; ?>
+                                            </td>
+                                            <td data-label="Aksi">
+                                                <?php if ($isExpiredTicket): ?>
+                                                    <span class="badge bg-dark">expired</span>
+                                                <?php elseif ($canManageThisTicket): ?>
                                                 <select class="form-select form-select-sm ticket-status-select" data-ticket-id="<?= (int) $t['id'] ?>" data-prev-status="<?= htmlspecialchars($t['status'], ENT_QUOTES, 'UTF-8') ?>">
                                                     <option value="pending" <?= $t['status'] === 'pending' ? 'selected' : '' ?>>pending</option>
                                                     <option value="in_progress" <?= $t['status'] === 'in_progress' ? 'selected' : '' ?>>in_progress</option>
                                                     <option value="resolved" <?= $t['status'] === 'resolved' ? 'selected' : '' ?>>resolved</option>
                                                 </select>
+                                                <?php else: ?>
+                                                    <span class="text-muted small">—</span>
+                                                <?php endif; ?>
                                             </td>
                                         </tr>
                                     <?php endforeach; ?>
                                 <?php else: ?>
-                                    <tr><td colspan="9" class="text-center text-muted py-4">Belum ada tiket.</td></tr>
+                                    <tr><td colspan="10" class="text-center text-muted py-4">Belum ada tiket.</td></tr>
                                 <?php endif; ?>
                             </tbody>
                         </table>
                     </div>
+                <?php if ($embedTicketsInPanel): ?>
+                </section>
+                <?php else: ?>
                 </div>
                 <?php endif; ?>
+                <?php endif; ?>
+
+<?php if ($isHelpdeskTicketsMode): ?>
+</div>
+    <div id="toastContainer" class="toast-container"></div>
+<?php else: ?>
             </div>
         </div>
     </div>
-
     <div id="toastContainer" class="toast-container"></div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="../assets/js/toast.js"></script>
     <script src="../assets/js/notification-badge.js"></script>
+    <?php include 'include_staff_call_footer.php'; ?>
+</body>
+</html>
+<?php endif; ?>
+
     <?php if ($showTicketsTable): ?>
     <script>
     (function () {
         const statusApiUrl = <?= json_encode($helpdeskStatusApiUrl, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
         const badgeClassByStatus = {
-            pending: 'bg-warning text-dark',
-            in_progress: 'bg-info text-dark',
-            resolved: 'bg-success',
+            pending: 'hd-status is-new',
+            in_progress: 'hd-status is-progress',
+            resolved: 'hd-status is-resolved',
+            expired: 'hd-status is-breach',
         };
+        const badgeLabelByStatus = {
+            pending: 'Pending',
+            in_progress: 'Diproses',
+            resolved: 'Selesai',
+            expired: 'Expired',
+        };
+        const useHdStatus = <?= $embedTicketsInPanel ? 'true' : 'false' ?>;
 
         function updateTicketBadge(ticketId, status) {
             const badge = document.querySelector('[data-ticket-badge="' + ticketId + '"]');
             if (!badge) return;
+            if (useHdStatus) {
+                badge.textContent = badgeLabelByStatus[status] || status;
+                badge.className = badgeClassByStatus[status] || 'hd-status';
+                badge.setAttribute('data-ticket-badge', ticketId);
+                return;
+            }
             badge.textContent = status;
-            badge.className = 'badge ' + (badgeClassByStatus[status] || 'bg-secondary');
+            badge.className = 'badge ' + ({
+                pending: 'bg-warning text-dark',
+                in_progress: 'bg-info text-dark',
+                resolved: 'bg-success',
+                expired: 'bg-dark',
+            }[status] || 'bg-secondary');
+        }
+
+        function updateTicketResponse(ticketId, data) {
+            const cell = document.querySelector('[data-ticket-response="' + ticketId + '"]');
+            if (!cell) return;
+            if (data && data.response_label && data.response_label !== '—') {
+                cell.innerHTML = '<span class="fw-semibold hd-response-tone hd-response-tone--success">' + data.response_label + '</span>';
+            }
         }
 
         document.querySelectorAll('.ticket-status-select').forEach(function (select) {
@@ -805,8 +962,17 @@ function staff_calls_page_url(int $page, string $statusFilter, string $viewFilte
                     if (!data.success) throw new Error(data.message || 'Gagal memperbarui status.');
                     select.dataset.prevStatus = nextStatus;
                     updateTicketBadge(ticketId, nextStatus);
-                    if (typeof showSuccess === 'function') {
-                        showSuccess('Status tiket', 'Tiket #' + ticketId + ' → ' + nextStatus);
+                    updateTicketResponse(ticketId, data);
+                    var statusLabel = typeof helpdeskStatusLabel === 'function'
+                        ? helpdeskStatusLabel(nextStatus)
+                        : nextStatus;
+                    if (typeof showHelpdeskStatusNotify === 'function') {
+                        showHelpdeskStatusNotify(
+                            'Status tiket diperbarui',
+                            'Tiket #' + ticketId + ' → ' + statusLabel
+                        );
+                    } else if (typeof showSuccess === 'function') {
+                        showSuccess('Status tiket', 'Tiket #' + ticketId + ' → ' + statusLabel);
                     }
                 } catch (err) {
                     select.value = prevStatus;
@@ -821,6 +987,3 @@ function staff_calls_page_url(int $page, string $statusFilter, string $viewFilte
     })();
     </script>
     <?php endif; ?>
-    <?php include 'include_staff_call_footer.php'; ?>
-</body>
-</html>

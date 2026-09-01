@@ -16,6 +16,13 @@ define('DB_NAME', 'nama_database');
 // Contoh: 'https://domain-anda.com/Recepsionis/' atau 'https://domain-anda.com/'
 define('PUBLIC_BASE_URL', 'https://domain-anda.com/Recepsionis/');
 
+// --- Cloudify WA (opsional — fallback jika tidak diisi di Settings admin) ---
+// define('CLOUDIFY_WA_API_URL', 'https://whatsapp.cloudify.id/api');
+// define('CLOUDIFY_WA_API_KEY', 'owa_k1_...');
+// define('CLOUDIFY_WA_SESSION', '99744581-04a8-41f1-b013-c025323ae56e');
+// Legacy alias API key:
+// define('DRIPSENDER_API_KEY', 'owa_k1_...');
+
 // --- Live chat Socket.io (opsional) ---
 // define('LIVE_SOCKET_URL', 'https://domain-anda.com');
 // define('LIVE_SOCKET_AUTO_HOST', false);

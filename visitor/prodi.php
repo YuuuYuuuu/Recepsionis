@@ -14,13 +14,20 @@ $all_prodi = $koneksi->query("SELECT * FROM prodi
     <title>Program Studi - E-Recepsionis System</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Sora:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
     <link href="../assets/css/style.css" rel="stylesheet">
     <link href="assets/landing/assets/visitor-landing.css" rel="stylesheet">
     <link href="../assets/css/visitor-unified.css" rel="stylesheet">
+    <link href="../assets/css/qr-with-logo.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="../assets/js/qr-with-logo.js"></script>
+    <?php require_once '../lib/qr_svg.php'; ?>
+    <script>
+        window.__QR_LOGO_URL__ = <?= json_encode(recepsionis_qr_logo_url(), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+        window.__QR_LOGO_ASPECT__ = <?= json_encode(recepsionis_qr_logo_aspect_ratio(), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+    </script>
     <style>
         :root {
             --bg: #f2f4f8;
@@ -45,7 +52,7 @@ $all_prodi = $koneksi->query("SELECT * FROM prodi
         body {
             background: radial-gradient(circle at top right, #f8fbff 0%, var(--bg) 55%);
             min-height: 100vh;
-            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Plus Jakarta Sans', Inter, 'Segoe UI', sans-serif;
             margin: 0;
             padding: 0;
             color: var(--text-primary);
@@ -75,12 +82,13 @@ $all_prodi = $koneksi->query("SELECT * FROM prodi
         }
 
         .prodi-page-header h1 {
+            font-family: Sora, 'Plus Jakarta Sans', sans-serif;
             font-size: 1.15rem;
-            font-weight: 700;
+            font-weight: 600;
             margin: 0;
             color: var(--text-primary);
-            letter-spacing: 0.06em;
-            text-transform: uppercase;
+            letter-spacing: 0.02em;
+            text-transform: none;
         }
 
         .back-button {
@@ -896,15 +904,8 @@ $all_prodi = $koneksi->query("SELECT * FROM prodi
             ?>
                 (function() {
                     const qrElement = document.getElementById("<?= $qr_id ?>");
-                    if (qrElement && typeof QRCode !== 'undefined') {
-                        new QRCode(qrElement, {
-                            text: <?= json_encode($qr_data) ?>,
-                            width: 120,
-                            height: 120,
-                            colorDark: "#0b3b8c",
-                            colorLight: "#ffffff",
-                            correctLevel: QRCode.CorrectLevel.H
-                        });
+                    if (qrElement && typeof recepsionisRenderQrWithLogo === 'function') {
+                        recepsionisRenderQrWithLogo(qrElement, <?= json_encode($qr_data) ?>, 120);
                     }
                 })();
             <?php endwhile; ?>

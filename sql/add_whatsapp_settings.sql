@@ -41,7 +41,8 @@ DELIMITER ;
 INSERT INTO settings (setting_key, setting_value)
 VALUES
 	('wa_enabled', '0'),
-	('wa_api_url', ''),
+	('wa_api_url', 'https://whatsapp.cloudify.id/api'),
 	('wa_api_token', ''),
+	('wa_session_id', ''),
 	('wa_admin_phones', '')
 ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value);

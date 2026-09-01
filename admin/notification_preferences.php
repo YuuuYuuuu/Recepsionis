@@ -1,5 +1,9 @@
 <?php
+/**
+ * Redirect lama → hub Helpdesk (preferensi notifikasi).
+ */
 require_once 'auth.php';
+require_once 'helpdesk_hub.php';
 
-header('Location: ' . (function_exists('adminUrl') ? adminUrl('settings.php#pref-notifikasi') : 'settings.php#pref-notifikasi'));
+header('Location: ' . helpdeskUrl('prefs'));
 exit;

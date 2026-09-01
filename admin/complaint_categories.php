@@ -131,12 +131,7 @@ if (recepsionis_table_exists($koneksi, 'admin_category_routing')) {
 
             <div class="col-md-10 content-area">
                 <div class="d-flex justify-content-between align-items-center mb-4">
-                    <div>
-                        <h2><i class="bi bi-tags"></i> Kategori Pengaduan</h2>
-                        <p class="text-muted mb-0">
-                            <small><i class="bi bi-info-circle"></i> Kategori digunakan untuk routing otomatis. Admin penerima per kategori sekarang dikelola dari halaman Kelola User.</small>
-                        </p>
-                    </div>
+                    <h2 class="mb-0"><i class="bi bi-tags"></i> Kategori Pengaduan</h2>
                     <div class="d-flex gap-2">
                         <a class="btn btn-outline-primary" href="<?= htmlspecialchars(function_exists('adminUrl') ? adminUrl('users.php') : 'users.php') ?>">
                             <i class="bi bi-person-gear"></i> Kelola User

@@ -1,0 +1,200 @@
+/* Laporan masuk — card list on Helpdesk dashboard */
+
+.hd-alert-panel {
+  margin-bottom: 1.25rem;
+}
+
+.hd-alert-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 0 1.15rem 1.15rem;
+}
+
+.hd-alert-empty {
+  margin: 0 1.15rem 1.15rem;
+  padding: 1.35rem 1rem;
+  text-align: center;
+  color: var(--hd-muted);
+  font-size: 0.9rem;
+  background: var(--hd-surface-2);
+  border: 1px dashed var(--hd-border);
+  border-radius: var(--hd-radius-sm);
+}
+
+.hd-alert-card {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 0.85rem 1rem;
+  align-items: stretch;
+  padding: 0.95rem 1rem;
+  background: var(--hd-surface);
+  border: 1px solid var(--hd-border);
+  border-radius: var(--hd-radius);
+  box-shadow: var(--hd-shadow-sm);
+}
+
+.hd-alert-card.is-entering {
+  animation: hdAlertIn 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.hd-alert-card-lottie {
+  width: 88px;
+  height: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(37, 99, 235, 0.08), rgba(14, 165, 233, 0.06));
+  flex-shrink: 0;
+}
+
+.hd-alert-card-lottie dotlottie-wc {
+  width: 72px !important;
+  height: 72px !important;
+  display: block;
+}
+
+.hd-alert-card-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.hd-alert-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.hd-alert-card-head strong {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--hd-text);
+  line-height: 1.35;
+}
+
+.hd-alert-card-head span {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--hd-muted);
+  white-space: nowrap;
+}
+
+.hd-alert-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.hd-alert-field {
+  min-width: 0;
+  padding: 0.55rem 0.65rem;
+  border-radius: 10px;
+  background: var(--hd-surface-2);
+  border: 1px solid var(--hd-border);
+}
+
+.hd-alert-field dt {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0 0 0.2rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--hd-muted);
+}
+
+.hd-alert-field dt i {
+  font-size: 0.72rem;
+  color: var(--hd-accent);
+}
+
+.hd-alert-field dd {
+  margin: 0;
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--hd-text);
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.hd-alert-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.hd-alert-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.48rem 0.85rem;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.hd-alert-btn--primary {
+  background: linear-gradient(135deg, #059669, #0d9488);
+  color: #fff;
+}
+
+.hd-alert-btn--primary:hover {
+  filter: brightness(1.05);
+  color: #fff;
+}
+
+.hd-alert-btn--ghost {
+  background: var(--hd-surface);
+  color: var(--hd-muted);
+  border: 1px solid var(--hd-border);
+}
+
+.hd-alert-btn--ghost:hover {
+  color: var(--hd-text);
+  border-color: #cbd5e1;
+}
+
+@keyframes hdAlertIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 720px) {
+  .hd-alert-card {
+    grid-template-columns: 1fr;
+  }
+
+  .hd-alert-card-lottie {
+    width: 100%;
+    height: 72px;
+  }
+
+  .hd-alert-fields {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hd-alert-card.is-entering {
+    animation: none !important;
+  }
+}

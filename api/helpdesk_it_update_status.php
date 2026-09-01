@@ -23,7 +23,7 @@ require_once dirname(__DIR__) . '/config.php';
 require_once dirname(__DIR__) . '/staff_call_routing.php';
 
 $userId = (int) ($_SESSION['user_id'] ?? 0);
-$isAdmin = (string) ($_SESSION['role'] ?? '') === 'admin';
+$userRole = (string) ($_SESSION['role'] ?? '');
 
 $ticketId = (int) ($_POST['ticket_id'] ?? 0);
 $status = trim((string) ($_POST['status'] ?? ''));
@@ -60,16 +60,29 @@ if ($assignedUserId !== null && $assignedUserId <= 0) {
     $assignedUserId = null;
 }
 
-if (!$isAdmin && !recepsionis_user_can_receive_helpdesk_it_ticket($koneksi, $userId, $assignedUserId, $categoryId)) {
+if (!recepsionis_user_can_manage_helpdesk_it_ticket($koneksi, $userId, $assignedUserId, $categoryId, $userRole)) {
     http_response_code(403);
     echo json_encode(['success' => false, 'message' => 'Anda tidak ditugaskan untuk tiket ini.'], JSON_UNESCAPED_UNICODE);
     exit;
 }
 
+$claim = isset($_POST['claim']) && (string) $_POST['claim'] === '1';
+
 $shouldAssign = in_array($status, ['in_progress', 'resolved'], true)
-    && ($assignedUserId === null || $assignedUserId <= 0)
     && $userId > 0
-    && recepsionis_column_exists($koneksi, 'helpdesk_it_tickets', 'assigned_user_id');
+    && recepsionis_column_exists($koneksi, 'helpdesk_it_tickets', 'assigned_user_id')
+    && ($claim || $assignedUserId === null || $assignedUserId <= 0);
+
+$prevStatus = (string) ($ticket['status'] ?? 'pending');
+if ($prevStatus === 'expired') {
+    http_response_code(409);
+    echo json_encode(['success' => false, 'message' => 'Tiket sudah expired (>24 jam tanpa tanggapan).'], JSON_UNESCAPED_UNICODE);
+    exit;
+}
+
+$markResponded = in_array($status, ['in_progress', 'resolved'], true)
+    && $prevStatus === 'pending'
+    && empty($ticket['responded_at']);
 
 if ($shouldAssign) {
     $stmt = $koneksi->prepare('UPDATE helpdesk_it_tickets SET status = ?, assigned_user_id = ?, updated_at = NOW() WHERE id = ?');
@@ -89,10 +102,34 @@ if (!$ok || $affected < 1) {
     exit;
 }
 
+if ($markResponded || in_array($status, ['in_progress', 'resolved'], true)) {
+    recepsionis_mark_helpdesk_ticket_responded($koneksi, $ticketId);
+}
+
+$respondedAt = null;
+if (recepsionis_column_exists($koneksi, 'helpdesk_it_tickets', 'responded_at')) {
+    $rs = $koneksi->prepare('SELECT responded_at FROM helpdesk_it_tickets WHERE id = ? LIMIT 1');
+    if ($rs) {
+        $rs->bind_param('i', $ticketId);
+        $rs->execute();
+        $row = $rs->get_result()->fetch_assoc();
+        $rs->close();
+        $respondedAt = $row['responded_at'] ?? null;
+    }
+}
+
+$responseMinutes = recepsionis_ticket_response_minutes(
+    (string) ($ticket['created_at'] ?? ''),
+    $respondedAt !== null ? (string) $respondedAt : null
+);
+
 echo json_encode([
     'success' => true,
     'message' => 'Status tiket diperbarui.',
     'ticket_id' => $ticketId,
     'status' => $status,
     'assigned_user_id' => $shouldAssign ? $userId : $assignedUserId,
+    'responded_at' => $respondedAt,
+    'response_minutes' => $responseMinutes,
+    'response_label' => recepsionis_format_duration_minutes($responseMinutes),
 ], JSON_UNESCAPED_UNICODE);

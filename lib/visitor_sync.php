@@ -284,9 +284,61 @@ if (!function_exists('recepsionis_run_auto_checkout')) {
     }
 }
 
-if (!function_exists('recepsionis_fetch_visitors')) {
-    function recepsionis_fetch_visitors(mysqli $koneksi, string $statusFilter = 'all'): mysqli_result|false
+if (!function_exists('recepsionis_visitors_status_clause')) {
+    /**
+     * @return array{sql:string, types:string, params:array<int, string>}
+     */
+    function recepsionis_visitors_status_clause(string $statusFilter): array
     {
+        $allowed = ['checked-in', 'checked-out', 'pending'];
+        if ($statusFilter !== 'all' && in_array($statusFilter, $allowed, true)) {
+            return [
+                'sql' => ' WHERE v.status = ?',
+                'types' => 's',
+                'params' => [$statusFilter],
+            ];
+        }
+
+        return ['sql' => '', 'types' => '', 'params' => []];
+    }
+}
+
+if (!function_exists('recepsionis_count_visitors')) {
+    function recepsionis_count_visitors(mysqli $koneksi, string $statusFilter = 'all'): int
+    {
+        $clause = recepsionis_visitors_status_clause($statusFilter);
+        $sql = 'SELECT COUNT(*) AS total FROM visitors v' . $clause['sql'];
+
+        if ($clause['types'] !== '') {
+            $stmt = $koneksi->prepare($sql);
+            if (!$stmt) {
+                return 0;
+            }
+            $stmt->bind_param($clause['types'], ...$clause['params']);
+            $stmt->execute();
+            $row = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+
+            return (int) ($row['total'] ?? 0);
+        }
+
+        $result = $koneksi->query($sql);
+        if (!$result) {
+            return 0;
+        }
+        $row = $result->fetch_assoc();
+
+        return (int) ($row['total'] ?? 0);
+    }
+}
+
+if (!function_exists('recepsionis_fetch_visitors')) {
+    function recepsionis_fetch_visitors(
+        mysqli $koneksi,
+        string $statusFilter = 'all',
+        ?int $limit = null,
+        ?int $offset = null
+    ): mysqli_result|false {
         $sql = "
             SELECT v.*,
                    h.nama AS host_nama,
@@ -319,16 +371,45 @@ if (!function_exists('recepsionis_fetch_visitors')) {
             LEFT JOIN users pic ON pic.id = sc.answered_by
         ";
 
-        $allowed = ['checked-in', 'checked-out', 'pending'];
-        if ($statusFilter !== 'all' && in_array($statusFilter, $allowed, true)) {
-            $sql .= ' WHERE v.status = ? ORDER BY v.created_at DESC';
-            $stmt = $koneksi->prepare($sql);
-            $stmt->bind_param('s', $statusFilter);
-            $stmt->execute();
-            return $stmt->get_result();
+        $clause = recepsionis_visitors_status_clause($statusFilter);
+        $sql .= $clause['sql'] . ' ORDER BY v.created_at DESC';
+
+        $types = $clause['types'];
+        $params = $clause['params'];
+
+        if ($limit !== null && $limit > 0) {
+            $sql .= ' LIMIT ?';
+            $types .= 'i';
+            $params[] = $limit;
+
+            if ($offset !== null && $offset > 0) {
+                $sql .= ' OFFSET ?';
+                $types .= 'i';
+                $params[] = $offset;
+            }
         }
 
-        $sql .= ' ORDER BY v.created_at DESC';
-        return $koneksi->query($sql);
+        if ($types === '') {
+            return $koneksi->query($sql);
+        }
+
+        $stmt = $koneksi->prepare($sql);
+        if (!$stmt) {
+            return false;
+        }
+
+        $bindValues = $params;
+        $bindRefs = [$types];
+        $typeChars = str_split($types);
+        foreach ($bindValues as $key => $value) {
+            if (($typeChars[$key] ?? '') === 'i') {
+                $bindValues[$key] = (int) $value;
+            }
+            $bindRefs[] = &$bindValues[$key];
+        }
+        call_user_func_array([$stmt, 'bind_param'], $bindRefs);
+        $stmt->execute();
+
+        return $stmt->get_result();
     }
 }

@@ -1,5 +1,6 @@
 <?php
 require_once 'auth.php';
+require_once '../staff_call_routing.php';
 requireSuperAdminPage();
 
 /* ── Helpers ─────────────────────────────────────────────── */
@@ -24,6 +25,7 @@ function laporan_status_label(string $status): string
         'cancelled' => 'Dibatalkan',
         'in_progress' => 'Diproses',
         'resolved' => 'Selesai',
+        'expired' => 'Expired',
         'checked-in' => 'Check-In',
         'checked-out' => 'Check-Out',
     ];
@@ -32,7 +34,21 @@ function laporan_status_label(string $status): string
 
 function laporan_sumber_label(string $sumber): string
 {
-    return $sumber === 'ticket' ? 'Tiket Kelas' : 'Panggilan Staff';
+    $map = [
+        'call' => 'Panggilan Staff',
+        'ticket' => 'Tiket Kelas',
+    ];
+    return $map[$sumber] ?? ucfirst(str_replace('_', ' ', $sumber));
+}
+
+function laporan_ticket_access_label(?string $accessType): string
+{
+    return ($accessType ?? '') === 'room' ? 'Ruangan' : 'Event';
+}
+
+function laporan_ticket_issue_label(?string $issueCategory): string
+{
+    return recepsionis_issue_category_label((string) ($issueCategory ?? 'other'));
 }
 
 function laporan_format_duration(?int $minutes): string
@@ -297,17 +313,31 @@ function laporan_load_helpdesk(mysqli $koneksi, string $fromDt, string $toDt, st
         if ($statusFilter === 'answered') {
             $ticketStatus = 'resolved';
         } elseif ($statusFilter === 'cancelled') {
-            $ticketStatus = '__skip__';
+            $ticketStatus = 'expired';
         }
         if ($ticketStatus !== '__skip__') {
-            $sql = "SELECT 'ticket' AS sumber, t.id, t.created_at, t.nama, t.nomor AS kontak, t.kelas AS lokasi,
+            recepsionis_expire_stale_helpdesk_tickets($koneksi);
+            $hasRespondedAt = recepsionis_column_exists($koneksi, 'helpdesk_it_tickets', 'responded_at');
+            $responseExpr = $hasRespondedAt
+                ? "CASE
+                       WHEN t.responded_at IS NOT NULL THEN TIMESTAMPDIFF(MINUTE, t.created_at, t.responded_at)
+                       WHEN t.status = 'expired' THEN TIMESTAMPDIFF(MINUTE, t.created_at, t.updated_at)
+                       WHEN t.status IN ('in_progress', 'resolved') THEN TIMESTAMPDIFF(MINUTE, t.created_at, t.updated_at)
+                       ELSE NULL
+                   END"
+                : "CASE WHEN t.status IN ('in_progress', 'resolved', 'expired') THEN TIMESTAMPDIFF(MINUTE, t.created_at, t.updated_at) ELSE NULL END";
+            $respondedSelect = $hasRespondedAt ? 't.responded_at' : 'NULL AS responded_at';
+            $sql = "SELECT 'ticket' AS sumber, t.id, t.created_at, t.nama, t.nomor AS kontak,
+                           COALESCE(r.nama_ruangan, t.kelas) AS lokasi,
                            cc.nama_kategori AS kategori, t.category_id, 'tiket_kelas' AS tipe, t.status,
                            ua.nama_lengkap AS pic, NULL AS penanggung,
                            CASE WHEN t.status = 'resolved' THEN t.updated_at ELSE NULL END AS waktu_selesai,
-                           CASE WHEN t.status = 'resolved' THEN TIMESTAMPDIFF(MINUTE, t.created_at, t.updated_at) ELSE NULL END AS response_menit,
+                           {$responseExpr} AS response_menit,
                            t.follow_up_action, NULL AS whatsapp_sent, t.kendala AS deskripsi,
-                           NULL AS room_id, NULL AS answered_by, t.assigned_user_id
+                           t.room_id, t.access_type, t.issue_category, {$respondedSelect},
+                           NULL AS answered_by, t.assigned_user_id
                     FROM helpdesk_it_tickets t
+                    LEFT JOIN rooms r ON r.id = t.room_id
                     LEFT JOIN complaint_categories cc ON cc.id = t.category_id
                     LEFT JOIN users ua ON ua.id = t.assigned_user_id
                     WHERE t.created_at BETWEEN ? AND ?";
@@ -350,6 +380,8 @@ function laporan_helpdesk_stats(array $rows): array
     $byDayCall = [];
     $byDayTicket = [];
     $responseTimes = [];
+    $byIssueCategory = [];
+    $byAccessType = ['event' => 0, 'room' => 0];
     $waSent = 0;
     $waTotal = 0;
     $done = 0;
@@ -365,6 +397,13 @@ function laporan_helpdesk_stats(array $rows): array
         $sumberKey = (string) ($row['sumber'] ?? 'call');
         if ($sumberKey === 'ticket') {
             $byDayTicket[$day] = ($byDayTicket[$day] ?? 0) + 1;
+            $accessKey = (string) ($row['access_type'] ?? 'event');
+            if (!isset($byAccessType[$accessKey])) {
+                $byAccessType[$accessKey] = 0;
+            }
+            $byAccessType[$accessKey]++;
+            $issueKey = laporan_ticket_issue_label((string) ($row['issue_category'] ?? 'other'));
+            $byIssueCategory[$issueKey] = ($byIssueCategory[$issueKey] ?? 0) + 1;
         } else {
             $byDayCall[$day] = ($byDayCall[$day] ?? 0) + 1;
         }
@@ -408,6 +447,8 @@ function laporan_helpdesk_stats(array $rows): array
         'by_status' => $byStatus,
         'by_sumber' => $bySumber,
         'by_kategori' => $byKategori,
+        'by_issue_category' => $byIssueCategory,
+        'by_access_type' => $byAccessType,
         'by_day' => $byDay,
         'by_day_call' => $byDayCall,
         'by_day_ticket' => $byDayTicket,
@@ -658,9 +699,11 @@ if ($export) {
                 laporan_sumber_label((string) $row['sumber']),
                 $row['id'],
                 $row['created_at'],
-                $row['nama'],
-                $row['kontak'],
+                $row['nama'] ?: '—',
+                $row['kontak'] ?: '—',
                 $row['lokasi'],
+                laporan_ticket_access_label((string) ($row['access_type'] ?? 'event')),
+                laporan_ticket_issue_label((string) ($row['issue_category'] ?? 'other')),
                 $row['kategori'] ?: '—',
                 $row['tipe'],
                 laporan_status_label((string) $row['status']),
@@ -675,7 +718,7 @@ if ($export) {
         laporan_export_csv(
             'laporan-helpdesk_' . $dateFrom . '_' . $dateTo . '.csv',
             $meta,
-            ['No', 'Sumber', 'ID', 'Waktu', 'Nama', 'Kontak', 'Lokasi', 'Kategori', 'Tipe', 'Status', 'PIC', 'Ditangani', 'Selesai', 'Response (mnt)', 'WA', 'Deskripsi'],
+            ['No', 'Sumber', 'ID', 'Waktu', 'Nama', 'Kontak', 'Lokasi', 'Tipe Tiket', 'Kategori Kendala', 'Kategori PIC', 'Tipe', 'Status', 'PIC', 'Ditangani', 'Selesai', 'Response (mnt)', 'WA', 'Deskripsi'],
             $csvRows,
             [
                 ['Total kasus', $hdStats['total']],
@@ -783,6 +826,7 @@ $channelLabel = match ($channel) {
 };
 $maxDayHd = $hdStats['by_day'] ? max($hdStats['by_day']) : 1;
 $maxKatHd = $hdStats['by_kategori'] ? max($hdStats['by_kategori']) : 1;
+$maxIssueHd = !empty($hdStats['by_issue_category']) ? max($hdStats['by_issue_category']) : 1;
 $maxHost = $visitorByHost ? max($visitorByHost) : 1;
 $maxDayV = $visitorByDay ? max($visitorByDay) : 1;
 $maxOps = $operatorRows ? max(array_column($operatorRows, 'handled') ?: [1]) : 1;
@@ -830,19 +874,34 @@ if ($type === 'overview' || $type === 'visitors' || $type === 'helpdesk') {
             background: linear-gradient(135deg, #0f6e56 0%, #155e75 55%, #0b4f63 100%);
             color: #fff;
             border-radius: 14px;
-            padding: 1.25rem 1.4rem;
+            padding: 0.9rem 1.15rem;
             margin-bottom: 1rem;
             box-shadow: 0 10px 28px rgba(15, 110, 86, 0.22);
         }
         .rpt-cover h1 {
-            font-size: 1.35rem;
+            font-size: 1.2rem;
             font-weight: 700;
             letter-spacing: -0.02em;
-            margin: 0 0 0.2rem;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 0.45rem;
         }
-        .rpt-cover .rpt-meta { opacity: .92; font-size: .88rem; }
+        .rpt-cover h1 i { font-size: 1.15rem; opacity: 0.95; }
+        .rpt-print-only { display: none; }
+        .rpt-cover .rpt-meta { opacity: .92; font-size: .82rem; margin-top: 0.35rem; }
+        .rpt-cover .rpt-actions .btn {
+            width: 2.35rem;
+            height: 2.35rem;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 10px;
+        }
+        .rpt-cover .rpt-actions .btn i { font-size: 1.05rem; line-height: 1; }
         .rpt-cover .rpt-actions .btn { border-color: rgba(255,255,255,.45); color: #fff; }
-        .rpt-cover .rpt-actions .btn-light { color: #0f6e56; border: none; font-weight: 600; }
+        .rpt-cover .rpt-actions .btn-light { color: #0f6e56; border: none; }
         .rpt-cover .rpt-actions .btn-outline-light:hover { background: rgba(255,255,255,.12); color: #fff; }
 
         .rpt-filter { margin-bottom: 1rem; }
@@ -968,6 +1027,7 @@ if ($type === 'overview' || $type === 'visitors' || $type === 'helpdesk') {
         .rpt-badge-ticket { background: #fef3c7; color: #b45309; }
         .rpt-badge-pending { background: #fff7ed; color: #c2410c; }
         .rpt-badge-answered, .rpt-badge-resolved, .rpt-badge-checked-out { background: #dcfce7; color: #15803d; }
+        .rpt-badge-expired { background: #e2e8f0; color: #334155; }
         .rpt-badge-cancelled { background: #f1f5f9; color: #475569; }
         .rpt-badge-in_progress, .rpt-badge-checked-in { background: #e0e7ff; color: #4338ca; }
         .rpt-badge-admin { background: #fce7f3; color: #be185d; }
@@ -1014,24 +1074,26 @@ if ($type === 'overview' || $type === 'visitors' || $type === 'helpdesk') {
         <div class="col-md-10 content-area">
 
             <div class="rpt-cover">
-                <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
                     <div>
                         <div class="rpt-print-only small text-uppercase fw-semibold mb-1" style="letter-spacing:.08em;color:#0f6e56!important;">Dokumen Internal</div>
-                        <h1><i class="bi <?= htmlspecialchars($reportTypes[$type]['icon']) ?> me-1"></i> <?= htmlspecialchars($reportTypes[$type]['label']) ?></h1>
-                        <div class="rpt-meta">
+                        <h1><i class="bi <?= htmlspecialchars($reportTypes[$type]['icon']) ?>"></i> <?= htmlspecialchars($reportTypes[$type]['label']) ?></h1>
+                        <div class="rpt-print-only rpt-meta">
                             <?= htmlspecialchars($siteName) ?>
                             · Periode <?= htmlspecialchars($periodLabel) ?>
                             · Dicetak <?= htmlspecialchars($generatedAt) ?>
                             · Oleh <?= htmlspecialchars($reporterName) ?>
                         </div>
                     </div>
-                    <div class="rpt-actions d-flex flex-wrap gap-2">
+                    <div class="rpt-actions d-flex gap-2">
                         <a class="btn btn-light btn-sm"
-                           href="laporan.php?<?= htmlspecialchars(http_build_query(array_merge($queryBase, ['type' => $type, 'from' => $dateFrom, 'to' => $dateTo, 'export' => 'csv']))) ?>">
-                            <i class="bi bi-filetype-csv"></i> Export CSV
+                           href="laporan.php?<?= htmlspecialchars(http_build_query(array_merge($queryBase, ['type' => $type, 'from' => $dateFrom, 'to' => $dateTo, 'export' => 'csv']))) ?>"
+                           title="Export CSV" aria-label="Export CSV">
+                            <i class="bi bi-filetype-csv"></i>
                         </a>
-                        <button type="button" class="btn btn-outline-light btn-sm" onclick="window.print()">
-                            <i class="bi bi-printer"></i> Cetak / PDF
+                        <button type="button" class="btn btn-outline-light btn-sm" onclick="window.print()"
+                                title="Cetak / PDF" aria-label="Cetak / PDF">
+                            <i class="bi bi-printer"></i>
                         </button>
                     </div>
                 </div>
@@ -1098,7 +1160,8 @@ if ($type === 'overview' || $type === 'visitors' || $type === 'helpdesk') {
                                     <option value="in_progress" <?= $statusFilter === 'in_progress' ? 'selected' : '' ?>>Diproses</option>
                                     <option value="answered" <?= $statusFilter === 'answered' ? 'selected' : '' ?>>Terjawab</option>
                                     <option value="resolved" <?= $statusFilter === 'resolved' ? 'selected' : '' ?>>Selesai</option>
-                                    <option value="cancelled" <?= $statusFilter === 'cancelled' ? 'selected' : '' ?>>Dibatalkan</option>
+                                    <option value="expired" <?= $statusFilter === 'expired' ? 'selected' : '' ?>>Expired</option>
+                                    <option value="cancelled" <?= $statusFilter === 'cancelled' ? 'selected' : '' ?>>Dibatalkan / Expired</option>
                                 </select>
                             </div>
                             <div data-rpt-type="helpdesk" <?= $type !== 'helpdesk' ? 'hidden' : '' ?>>
@@ -1290,13 +1353,24 @@ if ($type === 'overview' || $type === 'visitors' || $type === 'helpdesk') {
                     </div>
                 </div>
                 <div class="row g-3">
-                    <div class="col-12">
+                    <div class="col-md-6">
                         <div class="rpt-panel h-100">
-                            <div class="rpt-panel-h"><i class="bi bi-tags"></i> Per Kategori</div>
+                            <div class="rpt-panel-h"><i class="bi bi-tags"></i> Per Kategori PIC</div>
                             <div class="rpt-panel-b">
                                 <?php if (!$hdStats['by_kategori']): ?><p class="text-muted small mb-0">Tidak ada data.</p>
                                 <?php else: foreach ($hdStats['by_kategori'] as $name => $count): ?>
                                     <div class="rpt-bar"><div class="name"><?= htmlspecialchars($name) ?></div><div class="track"><div class="fill" style="width:<?= round(($count / $maxKatHd) * 100) ?>%"></div></div><div class="count"><?= (int) $count ?></div></div>
+                                <?php endforeach; endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="rpt-panel h-100">
+                            <div class="rpt-panel-h"><i class="bi bi-ui-checks-grid"></i> Per Kategori Kendala</div>
+                            <div class="rpt-panel-b">
+                                <?php if (empty($hdStats['by_issue_category'])): ?><p class="text-muted small mb-0">Tidak ada data tiket.</p>
+                                <?php else: foreach ($hdStats['by_issue_category'] as $name => $count): ?>
+                                    <div class="rpt-bar"><div class="name"><?= htmlspecialchars($name) ?></div><div class="track"><div class="fill" style="width:<?= round(($count / $maxIssueHd) * 100) ?>%"></div></div><div class="count"><?= (int) $count ?></div></div>
                                 <?php endforeach; endif; ?>
                             </div>
                         </div>
@@ -1307,21 +1381,24 @@ if ($type === 'overview' || $type === 'visitors' || $type === 'helpdesk') {
                     <div class="rpt-panel-b p-0">
                         <div class="table-responsive">
                             <table class="table table-hover mb-0 rpt-table">
-                                <thead><tr><th>#</th><th>Waktu</th><th>Sumber</th><th>Nama</th><th>Lokasi</th><th>Kategori</th><th>Status</th><th>PIC</th><th>Response</th><th>Deskripsi</th></tr></thead>
+                                <thead><tr><th>#</th><th>Waktu</th><th>Sumber</th><th>Nama</th><th>Lokasi</th><th>Tipe</th><th>Kategori Kendala</th><th>Status</th><th>PIC</th><th>Response</th><th>Catatan</th></tr></thead>
                                 <tbody>
                                 <?php if (!$helpdeskRows): ?>
-                                    <tr><td colspan="10" class="text-center text-muted py-4">Tidak ada data kasus.</td></tr>
+                                    <tr><td colspan="11" class="text-center text-muted py-4">Tidak ada data kasus.</td></tr>
                                 <?php else: $n = 1; foreach ($helpdeskRows as $row):
                                     $st = (string) $row['status']; $sumber = (string) $row['sumber'];
                                     $resp = ($row['response_menit'] !== null && $row['response_menit'] !== '') ? (int) $row['response_menit'] : null;
+                                    $ticketType = $sumber === 'ticket' ? laporan_ticket_access_label((string) ($row['access_type'] ?? 'event')) : '—';
+                                    $issueLabel = $sumber === 'ticket' ? laporan_ticket_issue_label((string) ($row['issue_category'] ?? 'other')) : '—';
                                 ?>
                                     <tr>
                                         <td class="text-muted"><?= $n++ ?></td>
                                         <td class="text-nowrap"><?= htmlspecialchars(date('d/m/Y H:i', strtotime((string) $row['created_at']))) ?></td>
                                         <td><span class="rpt-badge <?= $sumber === 'ticket' ? 'rpt-badge-ticket' : 'rpt-badge-call' ?>"><?= htmlspecialchars(laporan_sumber_label($sumber)) ?></span><div class="small text-muted">#<?= (int) $row['id'] ?></div></td>
-                                        <td><div class="fw-semibold"><?= htmlspecialchars((string) $row['nama']) ?></div><div class="small text-muted"><?= htmlspecialchars((string) ($row['kontak'] ?: '—')) ?></div></td>
+                                        <td><div class="fw-semibold"><?= htmlspecialchars((string) ($row['nama'] ?: '—')) ?></div><div class="small text-muted"><?= htmlspecialchars((string) ($row['kontak'] ?: '—')) ?></div></td>
                                         <td><?= htmlspecialchars((string) ($row['lokasi'] ?: '—')) ?></td>
-                                        <td><?= htmlspecialchars((string) ($row['kategori'] ?: '—')) ?></td>
+                                        <td><?= htmlspecialchars($ticketType) ?></td>
+                                        <td><?= htmlspecialchars($issueLabel) ?></td>
                                         <td><span class="rpt-badge rpt-badge-<?= htmlspecialchars($st) ?>"><?= htmlspecialchars(laporan_status_label($st)) ?></span></td>
                                         <td><?= htmlspecialchars((string) ($row['pic'] ?: ($row['penanggung'] ?: '—'))) ?></td>
                                         <td><?= htmlspecialchars(laporan_format_duration($resp)) ?></td>
@@ -1437,11 +1514,6 @@ if ($type === 'overview' || $type === 'visitors' || $type === 'helpdesk') {
                 </div>
             <?php endif; ?>
 
-            <p class="rpt-footnote mb-4 mt-3">
-                Dokumen internal <?= htmlspecialchars($siteName) ?>.
-                Objek laporan: <?= htmlspecialchars($reportTypes[$type]['label']) ?> · Periode <?= htmlspecialchars($periodLabel) ?>.
-                Gunakan Export CSV atau Cetak/PDF untuk arsip resmi.
-            </p>
         </div>
     </div>
 </div>

@@ -3,7 +3,13 @@ require_once '../config.php';
 
 function loginRedirectTargetByRole(string $role): string
 {
-    return rtrim(BASE_URL, '/') . '/admin/' . ($role === 'admin' ? 'index.php' : 'operator_dashboard.php');
+    $path = 'helpdesk_dashboard.php';
+    if ($role === 'admin') {
+        $path = 'index.php';
+    } elseif ($role === 'helpdesk_admin' || $role === 'operator') {
+        $path = 'helpdesk_dashboard.php';
+    }
+    return rtrim(BASE_URL, '/') . '/admin/' . $path;
 }
 
 if (isset($_SESSION['user_id'])) {

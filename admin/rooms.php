@@ -129,6 +129,9 @@ $tvSchemaReady = recepsionis_column_exists($koneksi, 'rooms', 'tv_display_token'
 if (isset($_POST['tambah_ruangan'])) {
     $nama = trim((string) ($_POST['nama_ruangan'] ?? ''));
     $kode = trim((string) ($_POST['kode_ruangan'] ?? ''));
+    if ($kode === '') {
+        $kode = null;
+    }
     $lokasi = trim((string) ($_POST['lokasi'] ?? ''));
     $lantai = trim((string) ($_POST['lantai'] ?? ''));
     $gedung = trim((string) ($_POST['gedung'] ?? ''));
@@ -173,7 +176,8 @@ if (isset($_POST['tambah_ruangan'])) {
 if (isset($_POST['edit_ruangan'])) {
     $id = intval($_POST['id']);
     $nama = esc($_POST['nama_ruangan']);
-    $kode = esc($_POST['kode_ruangan']);
+    $kode = trim((string) ($_POST['kode_ruangan'] ?? ''));
+    $kodeSql = $kode === '' ? 'NULL' : "'" . $koneksi->real_escape_string($kode) . "'";
     $lokasi = esc($_POST['lokasi']);
     $lantai = esc($_POST['lantai'] ?? '');
     $gedung = esc($_POST['gedung'] ?? '');
@@ -191,7 +195,7 @@ if (isset($_POST['edit_ruangan'])) {
     }
     $perangkat = implode("\n", array_values(array_unique($perangkat_selected)));
     $mode_ruangan = esc($_POST['mode_ruangan'] ?? '');
-    $koneksi->query("UPDATE rooms SET nama_ruangan='$nama', kode_ruangan='$kode', lokasi='$lokasi', 
+    $koneksi->query("UPDATE rooms SET nama_ruangan='$nama', kode_ruangan=$kodeSql, lokasi='$lokasi',
                      lantai='$lantai', gedung='$gedung', kapasitas=$kapasitas, deskripsi='$deskripsi', 
                      perangkat='" . $koneksi->real_escape_string($perangkat) . "', mode_ruangan='" . $koneksi->real_escape_string($mode_ruangan) . "' 
                      WHERE id=$id");
@@ -226,10 +230,18 @@ $rooms = $koneksi->query("SELECT * FROM rooms ORDER BY gedung, lantai, nama_ruan
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
     <link href="../assets/css/style.css" rel="stylesheet">
+    <link href="../assets/css/qr-with-logo.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="../assets/js/qr-with-logo.js"></script>
+    <?php require_once '../lib/qr_svg.php'; ?>
+    <script>
+        window.__QR_LOGO_URL__ = <?= json_encode(recepsionis_qr_logo_url(), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+        window.__QR_LOGO_ASPECT__ = <?= json_encode(recepsionis_qr_logo_aspect_ratio(), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+    </script>
     <?php include 'include_staff_call_head.php'; ?>
     <style>
-        [id^="tvQr"] canvas, [id^="tvQr"] img { max-width: 160px; height: auto !important; }
+        [id^="tvQr"] canvas,
+        [id^="tvQr"] img:not(.qr-logo-mark) { max-width: 160px; height: auto !important; }
     </style>
 </head>
 <body>
@@ -340,7 +352,7 @@ $rooms = $koneksi->query("SELECT * FROM rooms ORDER BY gedung, lantai, nama_ruan
                                             $tvImageUrl = $tvImage !== '' ? recepsionis_room_tv_image_url($tvImage) : '';
                                             ?>
                                             <tr>
-                                                <td><strong><?= htmlspecialchars($room['kode_ruangan']) ?></strong></td>
+                                                <td><strong><?= ($kodeDisplay = trim((string) ($room['kode_ruangan'] ?? ''))) !== '' ? htmlspecialchars($kodeDisplay) : '-' ?></strong></td>
                                                 <td>
                                                     <?= htmlspecialchars($room['nama_ruangan']) ?>
                                                     <?php if ($tvImage !== ''): ?>
@@ -481,8 +493,8 @@ $rooms = $koneksi->query("SELECT * FROM rooms ORDER BY gedung, lantai, nama_ruan
                                                                     <input type="text" name="nama_ruangan" class="form-control" value="<?= htmlspecialchars($room['nama_ruangan']) ?>" required>
                                                                 </div>
                                                                 <div class="mb-3">
-                                                                    <label class="form-label">Kode Ruangan *</label>
-                                                                    <input type="text" name="kode_ruangan" class="form-control" value="<?= htmlspecialchars($room['kode_ruangan']) ?>" required>
+                                                                    <label class="form-label">Kode Ruangan</label>
+                                                                    <input type="text" name="kode_ruangan" class="form-control" value="<?= htmlspecialchars($room['kode_ruangan'] ?? '') ?>">
                                                                 </div>
                                                                 <div class="mb-3">
                                                                     <label class="form-label">Lokasi *</label>
@@ -574,8 +586,8 @@ $rooms = $koneksi->query("SELECT * FROM rooms ORDER BY gedung, lantai, nama_ruan
                             <input type="text" name="nama_ruangan" class="form-control" required>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Kode Ruangan *</label>
-                            <input type="text" name="kode_ruangan" class="form-control" required>
+                            <label class="form-label">Kode Ruangan</label>
+                            <input type="text" name="kode_ruangan" class="form-control">
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Lokasi *</label>
@@ -635,9 +647,8 @@ $rooms = $koneksi->query("SELECT * FROM rooms ORDER BY gedung, lantai, nama_ruan
     <script>
     document.querySelectorAll('[id^="tvQr"]').forEach(function (el) {
         var url = el.getAttribute('data-tv-url');
-        if (!url || typeof QRCode === 'undefined') return;
-        el.innerHTML = '';
-        new QRCode(el, { text: url, width: 148, height: 148 });
+        if (!url || typeof recepsionisRenderQrWithLogo !== 'function') return;
+        recepsionisRenderQrWithLogo(el, url, 148);
     });
     </script>
     <?php include 'include_staff_call_footer.php'; ?>

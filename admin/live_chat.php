@@ -1,6 +1,6 @@
 <?php
 /**
- * Live Chat sudah dinonaktifkan — alihkan ke antrian Helpdesk.
+ * Live Chat sudah dinonaktifkan — alihkan ke daftar panggilan E-Recepsionis.
  */
 require_once 'auth.php';
 requireComplaintOperatorPage();

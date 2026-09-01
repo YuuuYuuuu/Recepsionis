@@ -1,13 +1,16 @@
 <?php
 require_once 'auth.php';
 require_once '../staff_call_routing.php';
+require_once 'helpdesk_hub.php';
 
-if (currentUserIsAdmin()) {
-    header('Location: ' . adminUrl('index.php'));
-    exit;
+requireHelpdeskAccess();
+
+if (!defined('HELPDESK_HUB')) {
+    if (currentUserIsAdmin()) {
+        helpdeskRedirectToHub('dashboard');
+    }
+    helpdeskRedirectToHub('tasks');
 }
-
-requireComplaintOperatorPage();
 
 $currentUserId = (int) ($_SESSION['user_id'] ?? 0);
 $currentUserRole = (string) ($_SESSION['role'] ?? '');
@@ -16,6 +19,8 @@ $notifPrefs = recepsionis_get_notification_preferences($koneksi, $currentUserId)
 
 $assignedCategoryIds = recepsionis_get_admin_category_ids($koneksi, $currentUserId);
 $isHelpdeskPic = recepsionis_user_is_helpdesk_pic($koneksi, $currentUserId);
+$canManageHelpdeskTickets = recepsionis_user_is_helpdesk_manager_role($currentUserRole)
+    || recepsionis_user_is_helpdesk_category_member($koneksi, $currentUserId);
 $assignedCategories = [];
 foreach (recepsionis_get_complaint_categories($koneksi, true) as $category) {
     if (in_array((int) $category['id'], $assignedCategoryIds, true)) {
@@ -50,10 +55,10 @@ if ($pendingResult) {
 }
 
 $pendingHelpdeskTickets = [];
-if ($isHelpdeskPic && recepsionis_table_exists($koneksi, 'helpdesk_it_tickets')) {
-    $helpdeskCategoryId = recepsionis_get_helpdesk_it_category_id($koneksi);
+if ($canManageHelpdeskTickets && recepsionis_table_exists($koneksi, 'helpdesk_it_tickets')) {
+    recepsionis_expire_stale_helpdesk_tickets($koneksi);
     $ticketResult = $koneksi->query(
-        "SELECT * FROM helpdesk_it_tickets WHERE status = 'pending' ORDER BY created_at DESC LIMIT 50"
+        "SELECT * FROM helpdesk_it_tickets WHERE status IN ('pending', 'in_progress') ORDER BY created_at DESC LIMIT 50"
     );
     if ($ticketResult) {
         while ($row = $ticketResult->fetch_assoc()) {
@@ -61,11 +66,12 @@ if ($isHelpdeskPic && recepsionis_table_exists($koneksi, 'helpdesk_it_tickets'))
             if ($assignedUserId !== null && $assignedUserId <= 0) {
                 $assignedUserId = null;
             }
-            if (!recepsionis_user_can_receive_helpdesk_it_ticket(
+            if (!recepsionis_user_can_manage_helpdesk_it_ticket(
                 $koneksi,
                 $currentUserId,
                 $assignedUserId,
-                recepsionis_resolve_helpdesk_it_ticket_category_id($koneksi, $row)
+                recepsionis_resolve_helpdesk_it_ticket_category_id($koneksi, $row),
+                $currentUserRole
             )) {
                 continue;
             }
@@ -75,23 +81,33 @@ if ($isHelpdeskPic && recepsionis_table_exists($koneksi, 'helpdesk_it_tickets'))
             }
         }
     }
-    unset($helpdeskCategoryId);
 }
 
 $pendingItems = [];
-foreach ($pendingCalls as $call) {
-    $pendingItems[] = [
-        'type' => 'call',
-        'created_at' => $call['created_at'],
-        'data' => $call,
-    ];
-}
-foreach ($pendingHelpdeskTickets as $ticket) {
-    $pendingItems[] = [
-        'type' => 'ticket',
-        'created_at' => $ticket['created_at'],
-        'data' => $ticket,
-    ];
+// Di hub Helpdesk: hanya tiket QR (bukan panggilan tamu)
+if (defined('HELPDESK_HUB')) {
+    foreach ($pendingHelpdeskTickets as $ticket) {
+        $pendingItems[] = [
+            'type' => 'ticket',
+            'created_at' => $ticket['created_at'],
+            'data' => $ticket,
+        ];
+    }
+} else {
+    foreach ($pendingCalls as $call) {
+        $pendingItems[] = [
+            'type' => 'call',
+            'created_at' => $call['created_at'],
+            'data' => $call,
+        ];
+    }
+    foreach ($pendingHelpdeskTickets as $ticket) {
+        $pendingItems[] = [
+            'type' => 'ticket',
+            'created_at' => $ticket['created_at'],
+            'data' => $ticket,
+        ];
+    }
 }
 usort($pendingItems, static function ($a, $b) {
     return strtotime((string) $b['created_at']) <=> strtotime((string) $a['created_at']);
@@ -105,6 +121,10 @@ $actionCounts = recepsionis_get_helpdesk_action_counts(
     'mine',
     $currentUserRole
 );
+if (defined('HELPDESK_HUB')) {
+    $actionCounts['calls'] = 0;
+    $actionCounts['total'] = (int) $actionCounts['tickets'];
+}
 
 $greetingHour = (int) date('G');
 if ($greetingHour < 11) {
@@ -120,21 +140,8 @@ if ($greetingHour < 11) {
 $ticketStatusApiUrl = function_exists('apiUrl') ? apiUrl('helpdesk_it_update_status.php') : '../api/helpdesk_it_update_status.php';
 $answerCallApiUrl = function_exists('apiUrl') ? apiUrl('answer_staff_call.php') : '../api/answer_staff_call.php';
 ?>
-<!DOCTYPE html>
-<html lang="id">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard PIC - E-Recepsionis System</title>
-    <script>
-        window.originalPageTitle = 'Dashboard PIC - E-Recepsionis System';
-    </script>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
-    <link href="../assets/css/style.css" rel="stylesheet">
-    <?php include 'include_admin_head.php'; ?>
-    <?php include 'include_staff_call_head.php'; ?>
-    <style>
+<script>window.originalPageTitle = 'Tugas Saya — Helpdesk IT';</script>
+<style>
         .pic-dash-pending-item.is-resolved {
             opacity: .72;
             background: #f8fafc;
@@ -177,16 +184,8 @@ $answerCallApiUrl = function_exists('apiUrl') ? apiUrl('answer_staff_call.php') 
         @media (max-width: 575.98px) {
             .pic-dash-detail-row { grid-template-columns: 1fr; gap: .15rem; }
         }
-    </style>
-</head>
-<body>
-    <?php include 'navbar.php'; ?>
-
-    <div class="container-fluid">
-        <div class="row">
-            <?php include 'sidebar.php'; ?>
-
-            <div class="col-md-10 content-area pic-dash">
+</style>
+<div class="pic-dash">
                 <div class="pic-dash-hero">
                     <div class="pic-dash-hero-text">
                         <p class="pic-dash-greeting"><?= htmlspecialchars($greeting) ?>,</p>
@@ -197,7 +196,7 @@ $answerCallApiUrl = function_exists('apiUrl') ? apiUrl('answer_staff_call.php') 
                             <?php endif; ?>
                         </h1>
                         <p class="pic-dash-lead">
-                            Satu antrian Helpdesk untuk panggilan tamu dan tiket QR kelas. Notifikasi muncul otomatis sesuai sumber panggilan.
+                            Antrian tiket QR kelas / ruangan. Panggilan tamu dikelola di modul E-Recepsionis.
                         </p>
                         <?php if (!empty($assignedCategories)): ?>
                             <div class="pic-dash-categories">
@@ -220,54 +219,23 @@ $answerCallApiUrl = function_exists('apiUrl') ? apiUrl('answer_staff_call.php') 
                     <div class="alert alert-warning pic-dash-alert">
                         <i class="bi bi-bell-slash"></i>
                         Beberapa preferensi notifikasi Anda nonaktif.
-                        <a href="<?= htmlspecialchars(adminUrl('settings.php#pref-notifikasi')) ?>" class="alert-link">Atur di sini</a>
+                        <a href="<?= htmlspecialchars(helpdeskUrl('prefs')) ?>" class="alert-link">Atur di sini</a>
                         agar tidak melewatkan panggilan.
                     </div>
                 <?php endif; ?>
-
-                <div class="pic-dash-section-label">Menu cepat</div>
-                <div class="row g-3 pic-dash-actions mb-4">
-                    <div class="col-md-4">
-                        <a href="<?= htmlspecialchars(adminUrl('staff_calls.php?status=pending')) ?>" class="pic-dash-action-card" data-helpdesk-nav="dashboard-card">
-                            <span class="pic-dash-action-icon pic-dash-action-icon--call">
-                                <i class="bi bi-headset"></i>
-                                <?php if ($actionCounts['total'] > 0): ?>
-                                    <span class="pic-dash-action-badge helpdesk-action-badge" data-helpdesk-badge="total"><?= htmlspecialchars(recepsionis_format_action_count($actionCounts['total'])) ?></span>
-                                <?php endif; ?>
-                            </span>
-                            <span class="pic-dash-action-body">
-                                <strong>Helpdesk</strong>
-                                <span>Panggilan tamu & tiket QR kelas</span>
-                            </span>
-                            <i class="bi bi-chevron-right pic-dash-action-arrow"></i>
-                        </a>
-                    </div>
-                    <div class="col-md-4">
-                        <a href="<?= htmlspecialchars(adminUrl('settings.php#pref-notifikasi')) ?>" class="pic-dash-action-card">
-                            <span class="pic-dash-action-icon pic-dash-action-icon--prefs">
-                                <i class="bi bi-bell-fill"></i>
-                            </span>
-                            <span class="pic-dash-action-body">
-                                <strong>Preferensi Notifikasi</strong>
-                                <span>Atur suara dan popup panggilan</span>
-                            </span>
-                            <i class="bi bi-chevron-right pic-dash-action-arrow"></i>
-                        </a>
-                    </div>
-                </div>
 
                 <div class="card pic-dash-card mb-4">
                     <div class="card-header pic-dash-card-header">
                         <div>
                             <h5 class="mb-0">
-                                <i class="bi bi-hourglass-split"></i> Helpdesk menunggu
+                                <i class="bi bi-hourglass-split"></i> Tiket menunggu
                                 <?php if ($actionCounts['total'] > 0): ?>
                                     <span class="badge bg-danger rounded-pill ms-1 helpdesk-action-badge" data-helpdesk-badge="total"><?= htmlspecialchars(recepsionis_format_action_count($actionCounts['total'])) ?></span>
                                 <?php endif; ?>
                             </h5>
-                            <small class="text-muted">Panggilan staff & tiket QR — sumber berbeda, antrian sama</small>
+                            <small class="text-muted">Tiket dari form QR kelas / ruangan</small>
                         </div>
-                        <a href="<?= htmlspecialchars(adminUrl('staff_calls.php?status=pending')) ?>" class="btn btn-sm btn-outline-primary">
+                        <a href="<?= htmlspecialchars(helpdeskUrl('tickets', ['status' => 'pending'])) ?>" class="btn btn-sm btn-outline-primary">
                             Lihat semua
                         </a>
                     </div>
@@ -284,8 +252,15 @@ $answerCallApiUrl = function_exists('apiUrl') ? apiUrl('answer_staff_call.php') 
                                     <?php if ($item['type'] === 'ticket'): ?>
                                         <?php
                                         $ticket = $item['data'];
-                                        $ticketName = trim((string) ($ticket['nama'] ?? 'Pelapor'));
-                                        $initials = strtoupper(mb_substr($ticketName, 0, 1, 'UTF-8'));
+                                        $accessType = (string) ($ticket['access_type'] ?? 'event');
+                                        $issueLabel = recepsionis_issue_category_label((string) ($ticket['issue_category'] ?? 'other'));
+                                        $ticketName = trim((string) ($ticket['nama'] ?? ''));
+                                        $displayTitle = $accessType === 'room'
+                                            ? trim((string) ($ticket['kelas'] ?? 'Ruangan'))
+                                            : ($ticketName !== '' ? $ticketName : 'Pelapor Event');
+                                        $initials = recepsionis_strtoupper(recepsionis_substr($displayTitle, 0, 1));
+                                        $waitingMinutes = recepsionis_ticket_waiting_minutes((string) ($item['created_at'] ?? ''));
+                                        $waitingLabel = recepsionis_format_duration_minutes($waitingMinutes);
                                         $ticketPayload = [
                                             'type' => 'ticket',
                                             'id' => (int) ($ticket['id'] ?? 0),
@@ -293,8 +268,13 @@ $answerCallApiUrl = function_exists('apiUrl') ? apiUrl('answer_staff_call.php') 
                                             'nomor' => (string) ($ticket['nomor'] ?? ''),
                                             'kelas' => (string) ($ticket['kelas'] ?? ''),
                                             'kendala' => (string) ($ticket['kendala'] ?? ''),
+                                            'access_type' => $accessType,
+                                            'issue_category' => (string) ($ticket['issue_category'] ?? 'other'),
+                                            'issue_label' => $issueLabel,
                                             'status' => (string) ($ticket['status'] ?? 'pending'),
                                             'created_at' => date('d/m/Y H:i', strtotime((string) $item['created_at'])),
+                                            'waiting_minutes' => $waitingMinutes,
+                                            'waiting_label' => $waitingLabel,
                                         ];
                                         ?>
                                         <li class="pic-dash-pending-item"
@@ -304,11 +284,12 @@ $answerCallApiUrl = function_exists('apiUrl') ? apiUrl('answer_staff_call.php') 
                                             <div class="pic-dash-pending-main">
                                                 <div class="pic-dash-pending-avatar pic-dash-pending-avatar--helpdesk"><?= htmlspecialchars($initials) ?></div>
                                                 <div class="pic-dash-pending-info">
-                                                    <strong><?= htmlspecialchars($ticketName) ?></strong>
+                                                    <strong><?= htmlspecialchars($displayTitle) ?></strong>
                                                     <span>
                                                         <span class="badge bg-primary me-1">Tiket QR</span>
+                                                        <span class="badge bg-light text-dark border me-1"><?= htmlspecialchars($issueLabel) ?></span>
                                                         <span class="item-status-badge badge bg-warning text-dark">pending</span>
-                                                        · Kelas: <?= htmlspecialchars((string) ($ticket['kelas'] ?? '-')) ?>
+                                                        · <?= htmlspecialchars($accessType === 'room' ? 'Ruangan' : 'Event') ?>
                                                     </span>
                                                     <?php if (!empty($ticket['kendala'])): ?>
                                                         <em><?= htmlspecialchars((string) $ticket['kendala']) ?></em>
@@ -317,6 +298,7 @@ $answerCallApiUrl = function_exists('apiUrl') ? apiUrl('answer_staff_call.php') 
                                             </div>
                                             <div class="pic-dash-pending-meta">
                                                 <time><?= date('d/m/Y H:i', strtotime($item['created_at'])) ?></time>
+                                                <span class="small text-warning fw-semibold">Menunggu <?= htmlspecialchars($waitingLabel) ?></span>
                                                 <button type="button" class="btn btn-sm btn-primary btn-open-item">Buka</button>
                                             </div>
                                         </li>
@@ -327,9 +309,9 @@ $answerCallApiUrl = function_exists('apiUrl') ? apiUrl('answer_staff_call.php') 
                                         if ($visitorName === '') {
                                             $visitorName = 'Tamu';
                                         }
-                                        $initials = strtoupper(mb_substr($visitorName, 0, 1, 'UTF-8'));
+                                        $initials = recepsionis_strtoupper(recepsionis_substr($visitorName, 0, 1));
                                         if (preg_match('/\s+(\S)/u', $visitorName, $m)) {
-                                            $initials .= strtoupper($m[1]);
+                                            $initials .= recepsionis_strtoupper($m[1]);
                                         }
                                         $callPayload = [
                                             'type' => 'call',
@@ -372,9 +354,6 @@ $answerCallApiUrl = function_exists('apiUrl') ? apiUrl('answer_staff_call.php') 
                         <?php endif; ?>
                     </div>
                 </div>
-            </div>
-        </div>
-    </div>
 
     <div class="modal fade" id="picHelpdeskModal" tabindex="-1" aria-labelledby="picHelpdeskModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
@@ -399,12 +378,24 @@ $answerCallApiUrl = function_exists('apiUrl') ? apiUrl('answer_staff_call.php') 
                             <dd id="picModalKontak">—</dd>
                         </div>
                         <div class="pic-dash-detail-row">
-                            <dt id="picModalLokasiLabel">Kelas</dt>
+                            <dt>Tipe</dt>
+                            <dd id="picModalTipe">—</dd>
+                        </div>
+                        <div class="pic-dash-detail-row">
+                            <dt>Kategori Kendala</dt>
+                            <dd id="picModalIssue">—</dd>
+                        </div>
+                        <div class="pic-dash-detail-row">
+                            <dt id="picModalLokasiLabel">Lokasi</dt>
                             <dd id="picModalLokasi">—</dd>
                         </div>
                         <div class="pic-dash-detail-row">
                             <dt>Waktu</dt>
                             <dd id="picModalWaktu">—</dd>
+                        </div>
+                        <div class="pic-dash-detail-row">
+                            <dt>Waktu Respon</dt>
+                            <dd id="picModalResponse">—</dd>
                         </div>
                     </dl>
                     <div class="mt-3">
@@ -422,9 +413,6 @@ $answerCallApiUrl = function_exists('apiUrl') ? apiUrl('answer_staff_call.php') 
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="../assets/js/notification-badge.js"></script>
-    <script src="../assets/js/toast.js"></script>
     <script>
     (function () {
         var ticketApi = <?= json_encode($ticketStatusApiUrl, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
@@ -458,9 +446,34 @@ $answerCallApiUrl = function_exists('apiUrl') ? apiUrl('answer_staff_call.php') 
             setText('picModalIdLabel', '#' + (item.id || 0));
             setText('picModalNama', item.nama);
             setText('picModalKontak', item.nomor);
-            document.getElementById('picModalLokasiLabel').textContent = isTicket ? 'Kelas' : 'Kategori / Ruang';
-            setText('picModalLokasi', item.kelas || item.kategori || '—');
+            if (isTicket) {
+                setText('picModalTipe', item.access_type === 'room' ? 'Ruangan' : 'Event');
+                setText('picModalIssue', item.issue_label || item.issue_category || '—');
+                document.getElementById('picModalLokasiLabel').textContent = 'Lokasi';
+                setText('picModalLokasi', item.kelas || '—');
+                document.getElementById('picModalNama').closest('.pic-dash-detail-row').style.display =
+                    item.access_type === 'room' ? 'none' : '';
+                document.getElementById('picModalKontak').closest('.pic-dash-detail-row').style.display =
+                    item.access_type === 'room' ? 'none' : '';
+            } else {
+                setText('picModalTipe', 'Panggilan');
+                setText('picModalIssue', '—');
+                document.getElementById('picModalLokasiLabel').textContent = 'Kategori / Ruang';
+                setText('picModalLokasi', item.kelas || item.kategori || '—');
+                document.getElementById('picModalNama').closest('.pic-dash-detail-row').style.display = '';
+                document.getElementById('picModalKontak').closest('.pic-dash-detail-row').style.display = '';
+            }
             setText('picModalWaktu', item.created_at);
+            if (isTicket) {
+                setText(
+                    'picModalResponse',
+                    item.waiting_label
+                        ? ('Menunggu ' + item.waiting_label + ' (belum direspon)')
+                        : (item.response_label || '—')
+                );
+            } else {
+                setText('picModalResponse', '—');
+            }
             document.getElementById('picModalKendalaLabel').textContent = isTicket ? 'Kendala' : 'Pesan';
             setText('picModalKendala', item.kendala);
 
@@ -543,7 +556,12 @@ $answerCallApiUrl = function_exists('apiUrl') ? apiUrl('answer_staff_call.php') 
                 prosesBtn.innerHTML = '<i class="bi bi-check2-circle"></i> Sudah diproses';
                 bumpBadgesDown();
 
-                if (typeof showSuccess === 'function') {
+                if (currentItem.type === 'ticket' && typeof showHelpdeskStatusNotify === 'function') {
+                    showHelpdeskStatusNotify(
+                        'Status tiket diperbarui',
+                        'Tiket #' + currentItem.id + ' → Selesai'
+                    );
+                } else if (typeof showSuccess === 'function') {
                     showSuccess('Berhasil', currentItem.type === 'ticket'
                         ? ('Tiket #' + currentItem.id + ' diproses (resolved).')
                         : ('Panggilan #' + currentItem.id + ' ditandai terjawab.'));
@@ -562,7 +580,5 @@ $answerCallApiUrl = function_exists('apiUrl') ? apiUrl('answer_staff_call.php') 
         });
     })();
     </script>
-    <?php include 'include_staff_call_footer.php'; ?>
-</body>
-</html>
+</div>
 

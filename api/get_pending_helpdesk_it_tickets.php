@@ -23,6 +23,8 @@ $userId = (int) $_SESSION['user_id'];
 $prefs = recepsionis_get_notification_preferences($koneksi, $userId);
 $notificationsEnabled = (bool) ($prefs['notifications_enabled'] ?? true);
 
+recepsionis_expire_stale_helpdesk_tickets($koneksi);
+
 if (!$notificationsEnabled || !recepsionis_user_is_helpdesk_pic($koneksi, $userId)) {
     while (ob_get_level() > 0) {
         ob_end_clean();

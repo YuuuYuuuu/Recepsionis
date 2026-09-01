@@ -29,13 +29,37 @@ function helpdesk_action_summary(?array $entity, string $entityType): array
     }
 
     if ($entityType === 'ticket') {
+        $accessType = (string) ($entity['access_type'] ?? 'event');
+        $issueLabel = function_exists('recepsionis_issue_category_label')
+            ? recepsionis_issue_category_label((string) ($entity['issue_category'] ?? 'other'))
+            : (string) ($entity['issue_category'] ?? 'Lainnya');
+        $lokasi = trim((string) ($entity['kelas'] ?? ''));
+        $nama = trim((string) ($entity['nama'] ?? ''));
+        $nomor = trim((string) ($entity['nomor'] ?? ''));
+        $kendala = trim((string) ($entity['kendala'] ?? ''));
+
+        if ($accessType === 'room') {
+            return [
+                'sumber' => 'Tiket QR · Ruangan',
+                'nama' => $lokasi !== '' ? $lokasi : 'Ruangan',
+                'nomor' => $issueLabel,
+                'detail_label' => 'Catatan',
+                'detail' => $kendala !== '' ? $kendala : '—',
+                'ref' => 'Tiket #' . (int) ($entity['id'] ?? 0),
+                'nama_label' => 'Lokasi',
+                'nomor_label' => 'Kategori',
+            ];
+        }
+
         return [
-            'sumber' => 'Tiket QR',
-            'nama' => (string) ($entity['nama'] ?? '-'),
-            'nomor' => (string) ($entity['nomor'] ?? '-'),
-            'detail_label' => 'Kelas / Kendala',
-            'detail' => trim((string) ($entity['kelas'] ?? '') . "\n" . (string) ($entity['kendala'] ?? '')),
+            'sumber' => 'Tiket QR · Event',
+            'nama' => $nama !== '' ? $nama : '—',
+            'nomor' => $nomor !== '' ? $nomor : '—',
+            'detail_label' => 'Lokasi / Kendala',
+            'detail' => trim($lokasi . ($lokasi !== '' && $kendala !== '' ? "\n" : '') . $kendala . ($issueLabel !== '' ? "\nKategori: " . $issueLabel : '')),
             'ref' => 'Tiket #' . (int) ($entity['id'] ?? 0),
+            'nama_label' => 'Pelapor',
+            'nomor_label' => 'Nomor',
         ];
     }
 
@@ -46,6 +70,8 @@ function helpdesk_action_summary(?array $entity, string $entityType): array
         'detail_label' => 'Keperluan',
         'detail' => (string) ($entity['message'] ?? '-'),
         'ref' => 'Panggilan #' . (int) ($entity['id'] ?? 0),
+        'nama_label' => 'Pelapor',
+        'nomor_label' => 'Nomor',
     ];
 }
 
@@ -132,17 +158,19 @@ $summary = helpdesk_action_summary($entity, $entityType);
                         <?= htmlspecialchars($summary['sumber'] ?? '-') ?>
                     </div>
                     <div class="summary-item">
-                        <strong>Pelapor</strong>
+                        <strong><?= htmlspecialchars($summary['nama_label'] ?? 'Pelapor') ?></strong>
                         <?= htmlspecialchars($summary['nama'] ?? '-') ?>
                     </div>
                     <div class="summary-item">
-                        <strong>Nomor</strong>
+                        <strong><?= htmlspecialchars($summary['nomor_label'] ?? 'Nomor') ?></strong>
                         <?= htmlspecialchars($summary['nomor'] ?? '-') ?>
                     </div>
                     <div class="summary-item">
                         <strong><?= htmlspecialchars($summary['detail_label'] ?? 'Detail') ?></strong>
                         <?= nl2br(htmlspecialchars($summary['detail'] ?? '-')) ?>
                     </div>
+
+                    <p class="small text-muted mb-2"><?= htmlspecialchars($summary['ref'] ?? '') ?></p>
 
                     <div id="actionFeedback" class="alert d-none" role="alert"></div>
 

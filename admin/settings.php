@@ -1,10 +1,19 @@
 <?php
 require_once 'auth.php';
 require_once '../staff_call_routing.php';
+require_once 'helpdesk_hub.php';
 
 requireComplaintOperatorPage();
 
 $isAdmin = currentUserIsAdmin();
+
+// Preferensi notifikasi helpdesk → hub Helpdesk (bukan settings E-Recepsionis)
+if (!$isAdmin && (currentUserIsHelpdeskAdmin() || currentUserIsOperator())) {
+    header('Location: ' . helpdeskUrl('prefs'));
+    exit;
+}
+
+requireSuperAdminPage();
 
 // Mode pemeliharaan (file flag di root proyek) — admin saja
 if ($isAdmin && isset($_POST['save_maintenance'])) {
@@ -74,7 +83,7 @@ $prefs = recepsionis_get_notification_preferences($koneksi, $userId);
 $categoryIds = recepsionis_get_admin_category_ids($koneksi, $userId);
 $displayName = trim((string) ($_SESSION['nama_lengkap'] ?? $_SESSION['username'] ?? 'Operator'));
 $apiUrl = function_exists('apiUrl') ? apiUrl('admin_notification_preferences.php') : '../api/admin_notification_preferences.php';
-$pageTitle = $isAdmin ? 'Settings' : 'Preferensi Notifikasi';
+$pageTitle = 'Settings';
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -96,7 +105,7 @@ $pageTitle = $isAdmin ? 'Settings' : 'Preferensi Notifikasi';
 
             <div class="col-md-10 content-area">
                 <h2 class="mb-4">
-                    <i class="bi bi-<?= $isAdmin ? 'gear' : 'bell' ?>"></i> <?= htmlspecialchars($pageTitle) ?>
+                    <i class="bi bi-gear"></i> <?= htmlspecialchars($pageTitle) ?>
                 </h2>
 
                 <?php if ($isAdmin && isset($_GET['success'])): ?>
@@ -110,6 +119,9 @@ $pageTitle = $isAdmin ? 'Settings' : 'Preferensi Notifikasi';
                     <?php
                     $waTestOk = ($_GET['wa_test'] ?? '') === 'success';
                     $waTestDetail = json_decode((string) ($_GET['wa_test_detail'] ?? ''), true);
+                    $waFirst = is_array($waTestDetail) && !empty($waTestDetail['responses'][0]) && is_array($waTestDetail['responses'][0])
+                        ? $waTestDetail['responses'][0]
+                        : null;
                     ?>
                     <div class="alert alert-<?= $waTestOk ? 'success' : 'danger' ?> alert-dismissible fade show">
                         <i class="bi bi-<?= $waTestOk ? 'check-circle' : 'exclamation-triangle' ?>"></i>
@@ -119,10 +131,45 @@ $pageTitle = $isAdmin ? 'Settings' : 'Preferensi Notifikasi';
                             Tes WhatsApp gagal.
                             <?php if (is_array($waTestDetail)): ?>
                                 <div class="small mt-2 mb-0">
-                                    Alasan: <?= htmlspecialchars((string) ($waTestDetail['reason'] ?? 'unknown')) ?>
-                                    <?php if (!empty($waTestDetail['responses'][0]['response'])): ?>
-                                        <br>Respons API: <?= htmlspecialchars((string) $waTestDetail['responses'][0]['response']) ?>
+                                    <div><strong>Alasan:</strong> <?= htmlspecialchars((string) ($waTestDetail['reason'] ?? 'unknown')) ?></div>
+                                    <?php if (!empty($waTestDetail['phone_count'])): ?>
+                                        <div>Jumlah nomor: <?= (int) $waTestDetail['phone_count'] ?></div>
                                     <?php endif; ?>
+                                    <?php if ($waFirst): ?>
+                                        <?php if (isset($waFirst['http_code'])): ?>
+                                            <div>HTTP: <?= (int) $waFirst['http_code'] ?></div>
+                                        <?php endif; ?>
+                                        <?php if (!empty($waFirst['error'])): ?>
+                                            <div>cURL: <?= htmlspecialchars((string) $waFirst['error']) ?></div>
+                                        <?php endif; ?>
+                                        <?php if (!empty($waFirst['response'])): ?>
+                                            <div>Respons API: <?= htmlspecialchars((string) $waFirst['response']) ?></div>
+                                        <?php endif; ?>
+                                        <?php if (!empty($waFirst['phone'])): ?>
+                                            <div>Target: <?= htmlspecialchars((string) $waFirst['phone']) ?></div>
+                                        <?php endif; ?>
+                                    <?php elseif (($waTestDetail['reason'] ?? '') === 'no_phones'): ?>
+                                        <div>Isi <strong>Admin Phones</strong> (format 628…) lalu Simpan Settings.</div>
+                                    <?php elseif (($waTestDetail['reason'] ?? '') === 'missing_api_key'): ?>
+                                        <div>Isi <strong>Cloudify API Key</strong> di Settings atau set <code>CLOUDIFY_WA_API_KEY</code> di server.</div>
+                                    <?php elseif (($waTestDetail['reason'] ?? '') === 'missing_session'): ?>
+                                        <div>Isi <strong>Cloudify Session ID</strong> (UUID) di Settings atau set <code>CLOUDIFY_WA_SESSION</code> di server.</div>
+                                    <?php elseif (($waTestDetail['reason'] ?? '') === 'missing_api_url'): ?>
+                                        <div>Isi <strong>Cloudify API URL</strong> lalu Simpan Settings.</div>
+                                    <?php elseif (($waTestDetail['reason'] ?? '') === 'disabled'): ?>
+                                        <div>Centang <strong>Aktifkan Notifikasi WhatsApp</strong> lalu Simpan Settings.</div>
+                                    <?php elseif (($waTestDetail['reason'] ?? '') === 'curl_missing'): ?>
+                                        <div>Ekstensi PHP <code>curl</code> belum aktif di VPS. Hubungi admin server.</div>
+                                    <?php endif; ?>
+                                    <?php if (!empty($waTestDetail['failure_hint'])): ?>
+                                        <div class="mt-2"><strong>Saran:</strong> <?= htmlspecialchars((string) $waTestDetail['failure_hint']) ?></div>
+                                    <?php elseif (!empty($waTestDetail['api_reason'])): ?>
+                                        <div class="mt-2"><strong>Detail API:</strong> <?= htmlspecialchars((string) $waTestDetail['api_reason']) ?></div>
+                                    <?php endif; ?>
+                                    <div class="mt-2 text-muted">
+                                        Cek umum: API Key &amp; Session ID Cloudify valid, session status <strong>ready</strong> di panel Cloudify,
+                                        nomor pakai format internasional (<code>628…</code>), dan server boleh akses HTTPS keluar.
+                                    </div>
                                 </div>
                             <?php endif; ?>
                         <?php endif; ?>
@@ -250,12 +297,22 @@ $pageTitle = $isAdmin ? 'Settings' : 'Preferensi Notifikasi';
                                 <label class="form-label">Public Base URL</label>
                                 <input type="url" name="public_base_url" class="form-control"
                                        value="<?= htmlspecialchars($settings['public_base_url'] ?? '') ?>"
-                                       placeholder="http://103.107.4.29:89/Recepsionis/">
-                                <small class="text-muted">URL yang dipakai di link tindak lanjut WA. Wajib diisi di VPS. Untuk dev lokal pakai <code>http://localhost:8888/Recepsionis/</code> atau IP LAN Anda.</small>
+                                       placeholder="http://127.0.0.1:8888/Recepsionis/">
+                                <small class="text-muted">
+                                    URL yang dipakai di link tindak lanjut WA (approve PIC).
+                                    <strong>Jangan pakai https://localhost</strong> — akan error SSL.
+                                    Lokal: <code>http://127.0.0.1:8888/Recepsionis/</code>.
+                                    HP di jaringan yang sama: pakai IP LAN, contoh <code>http://192.168.x.x:8888/Recepsionis/</code>.
+                                    VPS: domain publik dengan http/https yang benar.
+                                </small>
                             </div>
 
                             <hr>
-                            <h5>WhatsApp Integration</h5>
+                            <h5>WhatsApp — Cloudify WA</h5>
+                            <p class="text-muted small mb-3">
+                                Provider: <a href="https://whatsapp.cloudify.id" target="_blank" rel="noopener">Cloudify WA</a>.
+                                Kirim via <code>POST /sessions/{sessionId}/messages/send-text</code> dengan header <code>X-API-Key</code>.
+                            </p>
                             <div class="mb-3">
                                 <div class="form-check form-switch">
                                     <input class="form-check-input" type="checkbox" name="wa_enabled" value="1" 
@@ -266,15 +323,22 @@ $pageTitle = $isAdmin ? 'Settings' : 'Preferensi Notifikasi';
                                 </div>
                             </div>
                             <div class="mb-3">
-                                <label class="form-label">WhatsApp API URL</label>
+                                <label class="form-label">Cloudify API URL</label>
                                 <input type="text" name="wa_api_url" class="form-control" 
-                                       value="<?= htmlspecialchars($settings['wa_api_url'] ?? '') ?>" placeholder="https://api.example.com/send">
-                                <small class="text-muted">Endpoint untuk mengirim pesan WhatsApp (POST JSON: {phone,message})</small>
+                                       value="<?= htmlspecialchars($settings['wa_api_url'] ?? '') ?>" placeholder="https://whatsapp.cloudify.id/api">
+                                <small class="text-muted">Base URL API (tanpa path kirim pesan). Kosongkan untuk pakai default Cloudify.</small>
                             </div>
                             <div class="mb-3">
-                                <label class="form-label">WhatsApp API Token (opsional)</label>
+                                <label class="form-label">Cloudify API Key</label>
                                 <input type="text" name="wa_api_token" class="form-control" 
-                                       value="<?= htmlspecialchars($settings['wa_api_token'] ?? '') ?>" placeholder="API token">
+                                       value="<?= htmlspecialchars($settings['wa_api_token'] ?? '') ?>" placeholder="owa_k1_...">
+                                <small class="text-muted">Dari Cloudify → Admin → API Keys. Header: <code>X-API-Key</code>.</small>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Cloudify Session ID</label>
+                                <input type="text" name="wa_session_id" class="form-control"
+                                       value="<?= htmlspecialchars($settings['wa_session_id'] ?? '') ?>" placeholder="99744581-04a8-41f1-b013-c025323ae56e">
+                                <small class="text-muted">UUID session WhatsApp (bukan nama session). Pastikan status session <strong>ready</strong>.</small>
                             </div>
                             <div class="mb-3">
                                 <label class="form-label">Admin Phones (comma separated)</label>
