@@ -8,11 +8,18 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      # IP VPS — jangan sertakan :89 atau http:// (port 89 = website, port 22 = SSH)
+      VPS_HOST: 103.107.4.29
     steps:
+      - name: Cek koneksi SSH (port 22)
+        run: |
+          nc -zv -w 15 "$VPS_HOST" 22
+
       - name: Menjalankan perintah remote di VPS
         uses: appleboy/ssh-action@v1.2.0
         with:
-          host: ${{ secrets.VPS_HOST }}
+          host: ${{ env.VPS_HOST }}
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: 22
