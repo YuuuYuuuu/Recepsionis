@@ -16,22 +16,30 @@ if (!function_exists('recepsionis_detect_base_url')) {
 
         $scriptName = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_NAME'] ?? ''));
         $projectName = basename(__DIR__);
-        $projectSegment = '/' . $projectName . '/';
-        $position = strpos($scriptName, $projectSegment);
+        $projectPrefix = '/' . $projectName;
 
-        if ($position !== false) {
-            $basePath = substr($scriptName, 0, $position + strlen($projectSegment));
-        } else {
-            $basePath = '/' . $projectName . '/';
+        // Deploy di subfolder, mis. /Recepsionis/admin/index.php
+        if (str_starts_with($scriptName, $projectPrefix . '/') || $scriptName === $projectPrefix) {
+            return $scheme . '://' . $host . $projectPrefix . '/';
         }
+
+        // Deploy di document root, mis. /admin/index.php atau /visitor/index.php
+        $dir = trim(str_replace('\\', '/', dirname($scriptName)), '/');
+        $segments = $dir === '' ? [] : explode('/', $dir);
+        $appDirs = ['admin', 'visitor', 'api', 'migrations'];
+
+        if (!empty($segments) && in_array((string) end($segments), $appDirs, true)) {
+            array_pop($segments);
+        }
+
+        if (!empty($segments) && end($segments) === $projectName) {
+            array_pop($segments);
+        }
+
+        $basePath = empty($segments) ? '/' : '/' . implode('/', $segments) . '/';
 
         return $scheme . '://' . $host . $basePath;
     }
-}
-
-// Base URL
-if (!defined('BASE_URL')) {
-    define('BASE_URL', recepsionis_detect_base_url());
 }
 
 // Path
@@ -41,11 +49,8 @@ define('RECEPSIONIS_MAINTENANCE_FLAG', BASE_PATH . '/maintenance.flag');
 /** Pesan opsional untuk halaman maintenance (teks biasa). */
 define('RECEPSIONIS_MAINTENANCE_MESSAGE_FILE', BASE_PATH . '/maintenance_message.txt');
 define('UPLOAD_PATH', BASE_PATH . '/uploads/');
-if (!defined('UPLOAD_URL')) {
-    define('UPLOAD_URL', rtrim(BASE_URL, '/') . '/uploads/');
-}
 
-// Database (sudah di koneksi.php)
+// Database (sudah di koneksi.php) — juga memuat config.local.php lebih awal
 require_once 'koneksi.php';
 
 // Override produksi / VPS (tidak di-commit): salin config.local.example.php → config.local.php
@@ -53,6 +58,14 @@ require_once 'koneksi.php';
 if (is_file(BASE_PATH . '/config.local.php') && !defined('RECEPSIONIS_CONFIG_LOCAL_LOADED')) {
     require_once BASE_PATH . '/config.local.php';
     define('RECEPSIONIS_CONFIG_LOCAL_LOADED', true);
+}
+
+// Base URL — bisa di-override lewat define('BASE_URL', ...) di config.local.php
+if (!defined('BASE_URL')) {
+    define('BASE_URL', recepsionis_detect_base_url());
+}
+if (!defined('UPLOAD_URL')) {
+    define('UPLOAD_URL', rtrim(BASE_URL, '/') . '/uploads/');
 }
 
 /**

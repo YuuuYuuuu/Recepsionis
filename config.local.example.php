@@ -13,8 +13,13 @@ define('DB_PASS', 'password_mysql_hosting');
 define('DB_NAME', 'nama_database');
 
 // --- URL publik (wajib untuk link WhatsApp & QR) ---
-// Contoh: 'https://domain-anda.com/Recepsionis/' atau 'https://domain-anda.com/'
+// Contoh subfolder: 'https://domain-anda.com/Recepsionis/'
+// Contoh document root VPS: 'http://103.107.4.29:89/'
 define('PUBLIC_BASE_URL', 'https://domain-anda.com/Recepsionis/');
+
+// --- Base URL aplikasi (opsional — override deteksi otomatis) ---
+// Pakai jika link admin/visitor salah prefix folder. Contoh VPS document root:
+// define('BASE_URL', 'http://103.107.4.29:89/');
 
 // --- Cloudify WA (opsional — fallback jika tidak diisi di Settings admin) ---
 // define('CLOUDIFY_WA_API_URL', 'https://whatsapp.cloudify.id/api');
