@@ -3,48 +3,14 @@ name: Deploy to VPS
 on:
   push:
     branches:
-      - main  # Ubah menjadi 'master' jika branch utama Anda bernama master
+      - main
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
-    env:
-      # IP VPS — jangan sertakan :89 atau http:// (port 89 = website, port 22 = SSH)
-      VPS_HOST: 103.107.4.29
+    # Self-hosted runner di VPS — tidak perlu SSH inbound dari GitHub (port 22 sering diblokir untuk IP datacenter).
+    runs-on: [self-hosted, recepsionis]
     steps:
-      - name: Cek koneksi SSH (port 22)
-        run: |
-          nc -zv -w 15 "$VPS_HOST" 22
-
-      - name: Menjalankan perintah remote di VPS
-        uses: appleboy/ssh-action@v1.2.0
-        with:
-          host: ${{ env.VPS_HOST }}
-          username: ${{ secrets.VPS_USERNAME }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: 22
-          timeout: 60s
-          command_timeout: 10m
-          script: |
-            set -e
-
-            # Masuk ke folder project di VPS Anda
-            cd /www/wwwroot/Recepsionis
-
-            # Menarik pembaruan kode terbaru dari GitHub
-            git pull origin main
-
-            # Jalankan migrasi database (aman dijalankan berulang)
-            php migrations/ensure_latest_schema.php
-
-            # Build halaman pengunjung (React → visitor/assets/landing/)
-            cd visitor-app
-            npm ci
-            npm run build
-            cd ..
-
-            # Pastikan folder upload writable (logo branding, denah, dll.)
-            mkdir -p uploads/branding uploads/floor_plans uploads/tv_info uploads/prodi
-            chmod -R 775 uploads
-
-            echo "Deploy selesai."
+      - name: Deploy di VPS
+        run: bash scripts/deploy.sh
+        env:
+          RECEPSIONIS_ROOT: /www/wwwroot/Recepsionis
