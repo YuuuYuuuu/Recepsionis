@@ -1,0 +1,41 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches:
+      - main  # Ubah menjadi 'master' jika branch utama Anda bernama master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Menjalankan perintah remote di VPS
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USERNAME }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT }}
+          script: |
+            set -e
+
+            # Masuk ke folder project di VPS Anda
+            cd /www/wwwroot/Recepsionis
+
+            # Menarik pembaruan kode terbaru dari GitHub
+            git pull origin main
+
+            # Jalankan migrasi database (aman dijalankan berulang)
+            php migrations/ensure_latest_schema.php
+
+            # Build halaman pengunjung (React → visitor/assets/landing/)
+            cd visitor-app
+            npm ci
+            npm run build
+            cd ..
+
+            # Pastikan folder upload writable (logo branding, denah, dll.)
+            mkdir -p uploads/branding uploads/floor_plans uploads/tv_info uploads/prodi
+            chmod -R 775 uploads
+
+            echo "Deploy selesai."
