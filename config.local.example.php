@@ -8,14 +8,14 @@
 
 // --- Database (wajib di hosting) ---
 define('DB_HOST', 'localhost');
-define('DB_USER', 'username_mysql_hosting');
-define('DB_PASS', 'password_mysql_hosting');
-define('DB_NAME', 'nama_database');
+define('DB_USER', 'recepsion_3q5xh1');
+define('DB_PASS', '123itb123');
+define('DB_NAME', 'recepsion_3q5xh1');
 
 // --- URL publik (wajib untuk link WhatsApp & QR) ---
 // Contoh subfolder: 'https://domain-anda.com/Recepsionis/'
 // Contoh document root VPS: 'http://103.107.4.29:89/'
-define('PUBLIC_BASE_URL', 'https://domain-anda.com/Recepsionis/');
+define('PUBLIC_BASE_URL', 'http://103.107.4.29:89/');
 
 // --- Base URL aplikasi (opsional — override deteksi otomatis) ---
 // Pakai jika link admin/visitor salah prefix folder. Contoh VPS document root:
@@ -31,3 +31,7 @@ define('PUBLIC_BASE_URL', 'https://domain-anda.com/Recepsionis/');
 // --- Live chat Socket.io (opsional) ---
 // define('LIVE_SOCKET_URL', 'https://domain-anda.com');
 // define('LIVE_SOCKET_AUTO_HOST', false);
+
+// --- Deploy webhook (opsional — alternatif jika tidak pakai self-hosted runner) ---
+// Token rahasia untuk POST /api/deploy_webhook.php (header: X-Deploy-Token)
+// define('DEPLOY_WEBHOOK_SECRET', 'ganti-dengan-string-panjang-acak');
