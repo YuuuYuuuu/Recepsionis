@@ -371,6 +371,16 @@ if (!function_exists('recepsionis_strtoupper')) {
     }
 }
 
+if (!function_exists('recepsionis_strlen')) {
+    function recepsionis_strlen(string $string): int
+    {
+        if (function_exists('mb_strlen')) {
+            return (int) mb_strlen($string, 'UTF-8');
+        }
+        return strlen($string);
+    }
+}
+
 require_once BASE_PATH . '/lib/visitor_sync.php';
 require_once BASE_PATH . '/lib/branding.php';
 require_once BASE_PATH . '/lib/tv_info.php';

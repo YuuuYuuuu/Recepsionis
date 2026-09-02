@@ -38,9 +38,9 @@ $userRole = function_exists('currentUserRoleLabel')
 $userInitials = '';
 foreach (preg_split('/\s+/', trim($userName)) as $part) {
     if ($part !== '') {
-        $userInitials .= mb_strtoupper(mb_substr($part, 0, 1));
+        $userInitials .= recepsionis_strtoupper(recepsionis_substr($part, 0, 1));
     }
-    if (mb_strlen($userInitials) >= 2) {
+    if (recepsionis_strlen($userInitials) >= 2) {
         break;
     }
 }
