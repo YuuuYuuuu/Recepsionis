@@ -14,6 +14,23 @@ if (!function_exists('recepsionis_detect_base_url')) {
             $host = '127.0.0.1:8000';
         }
 
+        $projectPath = rtrim(str_replace('\\', '/', defined('BASE_PATH') ? (string) BASE_PATH : __DIR__), '/');
+        $docRoot = rtrim(str_replace('\\', '/', (string) ($_SERVER['DOCUMENT_ROOT'] ?? '')), '/');
+
+        // Paling andal: bandingkan folder project vs document root web server.
+        if ($docRoot !== '' && $projectPath !== '') {
+            if ($docRoot === $projectPath) {
+                return $scheme . '://' . $host . '/';
+            }
+
+            if (str_starts_with($projectPath, $docRoot . '/')) {
+                $relative = trim(substr($projectPath, strlen($docRoot)), '/');
+                if ($relative !== '') {
+                    return $scheme . '://' . $host . '/' . $relative . '/';
+                }
+            }
+        }
+
         $scriptName = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_NAME'] ?? ''));
         $projectName = basename(__DIR__);
         $projectPrefix = '/' . $projectName;
