@@ -16,17 +16,36 @@ if (isset($_POST['tambah_prodi'])) {
     
     // Handle file upload
     $foto = '';
-    if (isset($_FILES['foto']) && $_FILES['foto']['error'] == 0) {
+    $uploadError = '';
+    if (isset($_FILES['foto'])) {
         $upload_dir = '../uploads/prodi/';
         if (!is_dir($upload_dir)) {
             mkdir($upload_dir, 0777, true);
         }
-        $file_ext = strtolower(pathinfo($_FILES['foto']['name'], PATHINFO_EXTENSION));
-        $allowed_ext = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
-        if (in_array($file_ext, $allowed_ext)) {
-            $foto = uniqid() . '.' . $file_ext;
-            move_uploaded_file($_FILES['foto']['tmp_name'], $upload_dir . $foto);
+
+        if (($_FILES['foto']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK) {
+            $file_ext = strtolower(pathinfo($_FILES['foto']['name'], PATHINFO_EXTENSION));
+            $allowed_ext = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+            if (in_array($file_ext, $allowed_ext, true)) {
+                $fotoCandidate = uniqid() . '.' . $file_ext;
+                $dest = $upload_dir . $fotoCandidate;
+                if (move_uploaded_file($_FILES['foto']['tmp_name'], $dest)) {
+                    $foto = $fotoCandidate;
+                } else {
+                    $uploadError = 'Gagal menyimpan file ke folder uploads/prodi (izin folder).';
+                }
+            } else {
+                $uploadError = 'Format file foto tidak didukung.';
+            }
+        } else {
+            $uploadError = 'Upload foto gagal. Cek ukuran file atau konfigurasi PHP.';
         }
+    }
+
+    // Karena input foto di form "Tambah Prodi" wajib, stop jika upload gagal.
+    if ($uploadError !== '') {
+        header("Location: prodi.php?error=upload_failed&reason=" . urlencode($uploadError));
+        exit;
     }
     
     $kode_sql = $kode_prodi ? "'$kode_prodi'" : 'NULL';
@@ -52,27 +71,38 @@ if (isset($_POST['edit_prodi'])) {
     
     // Handle file upload
     $foto_update = '';
-    if (isset($_FILES['foto']) && $_FILES['foto']['error'] == 0) {
+    $uploadError = '';
+    if (isset($_FILES['foto']) && (($_FILES['foto']['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_OK)) {
         $upload_dir = '../uploads/prodi/';
         if (!is_dir($upload_dir)) {
             mkdir($upload_dir, 0777, true);
         }
+
         $file_ext = strtolower(pathinfo($_FILES['foto']['name'], PATHINFO_EXTENSION));
         $allowed_ext = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
-        if (in_array($file_ext, $allowed_ext)) {
-            // Delete old photo if exists
-            $stmt = $koneksi->prepare("SELECT foto FROM prodi WHERE id = ?");
-            $stmt->bind_param("i", $id);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            $old_prodi = $result->fetch_assoc();
-            $stmt->close();
-            
-            if ($old_prodi && $old_prodi['foto'] && file_exists($upload_dir . $old_prodi['foto'])) {
-                unlink($upload_dir . $old_prodi['foto']);
+        if (in_array($file_ext, $allowed_ext, true)) {
+            $fotoCandidate = uniqid() . '.' . $file_ext;
+            $dest = $upload_dir . $fotoCandidate;
+
+            // Jangan hapus foto lama sebelum move_uploaded_file sukses
+            if (move_uploaded_file($_FILES['foto']['tmp_name'], $dest)) {
+                $stmt = $koneksi->prepare("SELECT foto FROM prodi WHERE id = ?");
+                $stmt->bind_param("i", $id);
+                $stmt->execute();
+                $result = $stmt->get_result();
+                $old_prodi = $result->fetch_assoc();
+                $stmt->close();
+
+                if ($old_prodi && $old_prodi['foto'] && file_exists($upload_dir . $old_prodi['foto'])) {
+                    unlink($upload_dir . $old_prodi['foto']);
+                }
+
+                $foto_update = $fotoCandidate;
+            } else {
+                $uploadError = 'Gagal menyimpan file foto (izin folder uploads/prodi).';
             }
-            $foto_update = uniqid() . '.' . $file_ext;
-            move_uploaded_file($_FILES['foto']['tmp_name'], $upload_dir . $foto_update);
+        } else {
+            $uploadError = 'Format file foto tidak didukung.';
         }
     }
     
@@ -85,7 +115,11 @@ if (isset($_POST['edit_prodi'])) {
     }
     $stmt->execute();
     $stmt->close();
-    header("Location: prodi.php?success=updated");
+    $redirect = "prodi.php?success=updated";
+    if ($uploadError !== '') {
+        $redirect .= "&upload_error=1&reason=" . urlencode($uploadError);
+    }
+    header("Location: " . $redirect);
     exit;
 }
 
@@ -184,6 +218,26 @@ $prodi_list = $koneksi->query("SELECT * FROM prodi ORDER BY fakultas, nama_prodi
                         elseif ($_GET['success'] == 'updated') echo 'Program studi berhasil diupdate';
                         elseif ($_GET['success'] == 'deleted') echo 'Program studi berhasil dihapus';
                         ?>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                <?php endif; ?>
+
+                <?php if (isset($_GET['upload_error']) && (string) $_GET['upload_error'] === '1'): ?>
+                    <div class="alert alert-warning alert-dismissible fade show">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        Upload foto tidak tersimpan. <?php if (!empty($_GET['reason'])): ?>
+                            <?= htmlspecialchars((string) $_GET['reason']) ?>
+                        <?php else: ?>
+                            Periksa izin folder `uploads/prodi`.
+                        <?php endif; ?>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                <?php endif; ?>
+
+                <?php if (isset($_GET['error']) && (string) $_GET['error'] === 'upload_failed'): ?>
+                    <div class="alert alert-danger alert-dismissible fade show">
+                        <i class="bi bi-x-circle"></i>
+                        <?= !empty($_GET['reason']) ? htmlspecialchars((string) $_GET['reason']) : 'Upload foto gagal.' ?>
                         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     </div>
                 <?php endif; ?>
